@@ -1,0 +1,9 @@
+.git
+.agents
+.codex
+node_modules
+web/mini-app/node_modules
+web/mini-app/dist
+*.md
+.env
+.DS_Store

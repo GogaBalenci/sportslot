@@ -1,0 +1,9 @@
+DROP INDEX IF EXISTS idx_venues_sport_level;
+DROP INDEX IF EXISTS idx_bookings_slot;
+DROP INDEX IF EXISTS idx_bookings_user;
+DROP INDEX IF EXISTS idx_slots_start_at;
+DROP INDEX IF EXISTS idx_slots_venue;
+DROP TABLE IF EXISTS bookings;
+DROP TABLE IF EXISTS slots;
+DROP TABLE IF EXISTS venues;
+DROP TABLE IF EXISTS users;

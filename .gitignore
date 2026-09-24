@@ -1,0 +1,13 @@
+.env
+.pnpm-store/
+node_modules/
+web/mini-app/node_modules/
+web/mini-app/dist/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+.DS_Store
+.vscode/
+/Архитектура проекта/
+/Инструкции для ИИ/
+/Продуктовы пакет/

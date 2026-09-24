@@ -1,0 +1,18 @@
+:root { color: #1c1b1f; background: #f5f7fb; font-family: Inter, Arial, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+button { font: inherit; }
+.page { max-width: 700px; margin: 0 auto; padding: 24px 16px 40px; }
+.hero { margin-bottom: 20px; }
+.hero h1 { margin: 6px 0 10px; font-size: clamp(28px, 8vw, 40px); line-height: 1.08; }
+.hero p { margin: 0; color: #5f6368; line-height: 1.45; }
+.eyebrow, .card-meta { color: #0a66ff !important; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+.filters { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 14px; }
+.filter { border: 1px solid #dbe2ee; background: white; color: #3e4653; border-radius: 999px; padding: 9px 14px; white-space: nowrap; cursor: pointer; }
+.filter.active { border-color: #0a66ff; background: #eaf2ff; color: #0757da; }
+.cards { display: grid; gap: 12px; }
+.card { padding: 0 !important; overflow: hidden; }
+.card-content { display: grid; gap: 14px; padding: 18px; }
+.card h2 { margin: 2px 0 6px; font-size: 20px; }.card p { margin: 0; color: #5f6368; }
+.slot-info { display: grid; gap: 5px; }.places { color: #137333; font-weight: 600; }.sold-out { color: #b3261e; }
+.notice, .status { border-radius: 12px; padding: 12px 14px; background: #eaf2ff; color: #0757da; margin: 12px 0; }.status { color: #5f6368; background: white; }

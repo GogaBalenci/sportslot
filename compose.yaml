@@ -1,0 +1,51 @@
+name: sportslot
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: sportslot
+      POSTGRES_USER: sportslot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sportslot -d sportslot"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      HTTP_PORT: 8080
+      DATABASE_URL: postgresql://sportslot:${POSTGRES_PASSWORD}@db:5432/sportslot?sslmode=disable
+      MAX_BOT_API_BASE_URL: ${MAX_BOT_API_BASE_URL:-https://botapi.max.ru}
+      MAX_BOT_API_TOKEN: ${MAX_BOT_API_TOKEN:-}
+      MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET:?set MAX_WEBHOOK_SECRET in .env}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      MINI_APP_URL: ${MINI_APP_URL:-http://localhost:5173}
+      NOTIFIER_INTERVAL_SECONDS: ${NOTIFIER_INTERVAL_SECONDS:-120}
+      SEED_DATA_PATH: seed-data/venues.json
+    ports:
+      - "${API_PORT:-8080}:8080"
+
+  mini-app:
+    build:
+      context: .
+      dockerfile: web/mini-app/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "${MINI_APP_PORT:-5173}:80"
+
+volumes:
+  postgres-data:
