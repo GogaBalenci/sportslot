@@ -22,7 +22,7 @@ func (m *mockVenueRepo) GetByID(ctx context.Context, id string) (*model.Venue, e
 	return nil, repository.ErrNotFound
 }
 func (m *mockVenueRepo) Create(ctx context.Context, v *model.Venue) error { return nil }
-func (m *mockVenueRepo) List(ctx context.Context) ([]model.Venue, error)   { return nil, nil }
+func (m *mockVenueRepo) List(ctx context.Context) ([]model.Venue, error)  { return nil, nil }
 
 func TestFindSlots_Validation(t *testing.T) {
 	svc := service.NewMatchingService(&mockVenueRepo{}, &mockSlotRepo{})

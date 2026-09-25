@@ -32,11 +32,11 @@ func (m *mockSlotRepo) IncrementQuota(ctx context.Context, slotID string) error 
 func (m *mockSlotRepo) DecrementQuota(ctx context.Context, slotID string) error { return nil }
 
 type mockBookingRepo struct {
-	createConfirmedFunc   func(ctx context.Context, b *model.Booking) error
-	getByIDFunc           func(ctx context.Context, id string) (*model.Booking, error)
-	cancelFunc            func(ctx context.Context, bookingID string) error
-	rescheduleFunc        func(ctx context.Context, bookingID, newSlotID string) (*model.Booking, error)
-	listByUserIDFunc      func(ctx context.Context, userID string) ([]model.Booking, error)
+	createConfirmedFunc func(ctx context.Context, b *model.Booking) error
+	getByIDFunc         func(ctx context.Context, id string) (*model.Booking, error)
+	cancelFunc          func(ctx context.Context, bookingID string) error
+	rescheduleFunc      func(ctx context.Context, bookingID, newSlotID string) (*model.Booking, error)
+	listByUserIDFunc    func(ctx context.Context, userID string) ([]model.Booking, error)
 }
 
 func (m *mockBookingRepo) CreateConfirmed(ctx context.Context, b *model.Booking) error {
