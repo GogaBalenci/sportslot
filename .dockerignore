@@ -1,9 +1,14 @@
 .git
 .agents
 .codex
+.pnpm-store
+.vscode
 node_modules
 web/mini-app/node_modules
 web/mini-app/dist
+Архитектура проекта
+Инструкции для ИИ
+Продуктовы пакет
 *.md
 .env
 .DS_Store

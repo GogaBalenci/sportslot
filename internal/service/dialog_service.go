@@ -147,7 +147,7 @@ func (d *DialogService) showResults(ctx context.Context, maxUserID string, state
 		SportType: state.SportType,
 		Lat:       state.Lat,
 		Lon:       state.Lon,
-		RadiusKM:  5,
+		RadiusKM:  15,
 		DateFrom:  state.DateFrom,
 		DateTo:    state.DateTo,
 	})
@@ -246,7 +246,7 @@ func parseSportPayload(text string) string {
 func parseDateRange(text string) (time.Time, time.Time) {
 	_ = text
 	now := time.Now()
-	return now, now.Add(7 * 24 * time.Hour)
+	return now, now.Add(30 * 24 * time.Hour)
 }
 
 // parseArea - упрощённый парсинг MVP: координаты центра Москвы по умолчанию,

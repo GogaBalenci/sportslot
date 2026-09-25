@@ -14,11 +14,14 @@ function formatDate(value: string): string {
 }
 
 export default function App() {
-  const [sport, setSport] = useState('boxing')
+  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
+  const initialSport = searchParams?.get('sport') || 'boxing'
+  const [sport, setSport] = useState(initialSport)
   const [slots, setSlots] = useState<VenueSlot[]>([])
   const [loading, setLoading] = useState(true)
   const [bookingSlotID, setBookingSlotID] = useState<string | null>(null)
   const [message, setMessage] = useState('')
+  const [statusType, setStatusType] = useState<'success' | 'error' | ''>('')
   const userID = maxUserID()
   const userName = maxUserName()
 
@@ -26,9 +29,15 @@ export default function App() {
     let active = true
     setLoading(true)
     setMessage('')
+    setStatusType('')
     findSlots(userID, sport)
       .then(({ results }) => active && setSlots(results))
-      .catch((error: Error) => active && setMessage(error.message))
+      .catch((error: Error) => {
+        if (active) {
+          setMessage(error.message)
+          setStatusType('error')
+        }
+      })
       .finally(() => active && setLoading(false))
     return () => { active = false }
   }, [sport, userID])
@@ -36,14 +45,23 @@ export default function App() {
   async function book(slotID: string) {
     setBookingSlotID(slotID)
     setMessage('')
+    setStatusType('')
     try {
       await createBooking(userID, slotID)
       setMessage('Место забронировано. Подтверждение придёт в чат MAX.')
+      setStatusType('success')
       setSlots((current) => current.map((item) => item.slot.slot_id === slotID
         ? { ...item, slot: { ...item.slot, quota_available: Math.max(0, item.slot.quota_available - 1) } }
         : item))
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Не удалось создать бронь')
+      const errMsg = error instanceof Error ? error.message : 'Не удалось создать бронь'
+      setMessage(errMsg)
+      setStatusType('error')
+      if (errMsg.toLowerCase().includes('квота') || errMsg.toLowerCase().includes('исчерпана')) {
+        setSlots((current) => current.map((item) => item.slot.slot_id === slotID
+          ? { ...item, slot: { ...item.slot, quota_available: 0 } }
+          : item))
+      }
     } finally {
       setBookingSlotID(null)
     }
@@ -65,7 +83,7 @@ export default function App() {
         ))}
       </section>
 
-      {message && <div className="notice" role="status">{message}</div>}
+      {message && <div className={statusType === 'error' ? 'notice error' : 'notice'} role="status">{message}</div>}
       {loading && <p className="status">Ищем свободные тренировки…</p>}
       {!loading && !message && slots.length === 0 && <p className="status">Подходящих свободных слотов пока нет.</p>}
 

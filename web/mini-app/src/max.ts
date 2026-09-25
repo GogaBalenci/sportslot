@@ -5,9 +5,18 @@ export function initialiseMaxBridge(): void {
 
 export function maxUserID(): string {
   const id = window.WebApp?.initDataUnsafe?.user?.id
+  if (id) {
+    return String(id)
+  }
+  if (typeof window !== 'undefined' && window.location?.search) {
+    const param = new URLSearchParams(window.location.search).get('user')
+    if (param) {
+      return param
+    }
+  }
   // Используется только при открытии приложения вне MAX, чтобы локально
   // воспроизвести API-сценарий с тестовыми данными.
-  return id ? String(id) : import.meta.env.VITE_DEMO_MAX_USER_ID || 'max-test-user-001'
+  return import.meta.env.VITE_DEMO_MAX_USER_ID || 'max-test-user-001'
 }
 
 export function maxUserName(): string | undefined {

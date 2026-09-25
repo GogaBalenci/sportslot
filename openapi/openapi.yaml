@@ -1,0 +1,306 @@
+openapi: 3.0.3
+info:
+  title: СпортСлот API
+  version: "0.2.0"
+  description: >
+    API для поиска и бронирования спортивных слотов в рамках MVP.
+    Данные площадок тестовые (source_ref: test-data), структура
+    основана на Всероссийском реестре объектов спорта Минспорта России.
+    Бронирование работает по модели гарантированной квоты (allocation model),
+    выделенной залом-партнёром, без прямой интеграции с ERP зала.
+    Каждый слот привязан к конкретной дате и времени (start_at/end_at),
+    а не к шаблону дня недели.
+    Авторизация запросов из мини-приложения выполняется по заголовку
+    X-MAX-User-ID (упрощение MVP; для продакшена требуется верификация
+    подписи initData на стороне MAX Bridge).
+servers:
+  - url: http://localhost:8080
+    description: Локальный сервер разработки
+  - url: https://api.sportslot.example.com
+    description: Продакшен/демо-сервер
+tags:
+  - name: search
+  - name: bookings
+  - name: system
+paths:
+  /api/v1/search:
+    post:
+      tags: [search]
+      summary: Поиск доступных слотов по критериям
+      parameters:
+        - $ref: '#/components/parameters/MaxUserIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+      responses:
+        '200':
+          description: Список подходящих вариантов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/v1/venues/{id}:
+    get:
+      tags: [search]
+      summary: Детали площадки и её слоты
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+      responses:
+        '200':
+          description: Детали площадки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/bookings:
+    post:
+      tags: [bookings]
+      summary: Создать бронь
+      parameters:
+        - $ref: '#/components/parameters/MaxUserIdHeaderRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingCreateRequest'
+      responses:
+        '201':
+          description: Бронь создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '401':
+          description: Отсутствует или некорректен X-MAX-User-ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Квота на слот исчерпана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/v1/bookings/{id}:
+    delete:
+      tags: [bookings]
+      summary: Отменить бронь
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+        - $ref: '#/components/parameters/MaxUserIdHeaderRequired'
+      responses:
+        '204':
+          description: Бронь отменена
+        '401':
+          description: Отсутствует или некорректен X-MAX-User-ID
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/bookings/{id}/reschedule:
+    patch:
+      tags: [bookings]
+      summary: Перенести бронь на другой слот
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+        - $ref: '#/components/parameters/MaxUserIdHeaderRequired'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_slot_id]
+              properties:
+                new_slot_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Бронь перенесена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '401':
+          description: Отсутствует или некорректен X-MAX-User-ID
+        '409':
+          description: Квота на новый слот исчерпана
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/bookings/user/{user_id}:
+    get:
+      tags: [bookings]
+      summary: Список броней пользователя
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/MaxUserIdHeaderRequired'
+      responses:
+        '200':
+          description: Список броней
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Booking'
+  /api/v1/health:
+    get:
+      tags: [system]
+      summary: Health-check сервиса
+      responses:
+        '200':
+          description: Сервис работает
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+components:
+  parameters:
+    VenueId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    BookingId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MaxUserIdHeader:
+      name: X-MAX-User-ID
+      in: header
+      required: false
+      description: >
+        Идентификатор пользователя MAX (для персонализации поиска,
+        необязателен для /search).
+      schema: { type: string }
+    MaxUserIdHeaderRequired:
+      name: X-MAX-User-ID
+      in: header
+      required: true
+      description: >
+        Идентификатор пользователя MAX, передаваемый мини-приложением
+        (упрощённая авторизация MVP вместо верификации initData).
+      schema: { type: string }
+  responses:
+    BadRequest:
+      description: Некорректные параметры запроса
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    SearchRequest:
+      type: object
+      required: [sport_type, lat, lon]
+      properties:
+        sport_type: { type: string, example: boxing }
+        lat: { type: number, format: double, example: 55.751244 }
+        lon: { type: number, format: double, example: 37.618423 }
+        radius_km: { type: number, default: 15 }
+        date_from:
+          type: string
+          format: date
+          example: "2026-09-29"
+          description: Начало диапазона дат поиска (по умолчанию — сегодня)
+        date_to:
+          type: string
+          format: date
+          example: "2026-10-30"
+          description: Конец диапазона дат поиска
+        time_from:
+          type: string
+          example: "18:00"
+          description: Фильтр по времени суток (часы:минуты), применяется ко всем датам диапазона
+        time_to:
+          type: string
+          example: "21:00"
+        level:
+          type: string
+          enum: [beginner, intermediate, advanced]
+    SearchResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/VenueSlot'
+        meta:
+          type: object
+          properties:
+            data_source: { type: string, example: test-data }
+            generated_at: { type: string, format: date-time }
+    VenueSlot:
+      type: object
+      properties:
+        venue_id: { type: string, format: uuid }
+        name: { type: string }
+        sport_type: { type: string }
+        level: { type: string }
+        address: { type: string }
+        slot:
+          type: object
+          properties:
+            slot_id: { type: string, format: uuid }
+            start_at: { type: string, format: date-time, example: "2026-09-29T19:00:00+03:00" }
+            end_at: { type: string, format: date-time, example: "2026-09-29T20:00:00+03:00" }
+            quota_available: { type: integer }
+        source_ref: { type: string, example: test-data }
+    VenueDetails:
+      allOf:
+        - $ref: '#/components/schemas/VenueSlot'
+        - type: object
+          properties:
+            all_slots:
+              type: array
+              items:
+                type: object
+                properties:
+                  slot_id: { type: string, format: uuid }
+                  start_at: { type: string, format: date-time }
+                  end_at: { type: string, format: date-time }
+                  quota_available: { type: integer }
+    BookingCreateRequest:
+      type: object
+      required: [slot_id, source_channel]
+      properties:
+        slot_id: { type: string, format: uuid }
+        source_channel: { type: string, enum: [bot, miniapp] }
+      description: >
+        user_id не передаётся в теле — резолвится backend'ом
+        из заголовка X-MAX-User-ID.
+    Booking:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        slot_id: { type: string, format: uuid }
+        status: { type: string, enum: [confirmed, cancelled] }
+        source_channel: { type: string, enum: [bot, miniapp] }
+        created_at: { type: string, format: date-time }
+    ErrorResponse:
+      type: object
+      properties:
+        error: { type: string }
+        code: { type: string }

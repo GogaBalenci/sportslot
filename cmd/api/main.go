@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -59,9 +60,15 @@ func main() {
 	dialogSvc := service.NewDialogService(matchingSvc, bookingSvc, cfg.MiniAppURL)
 	notifierSvc := service.NewNotifierService(bookingRepo, maxClient, cfg.NotifierInterval)
 
+	var notifierWG sync.WaitGroup
 	notifierCtx, cancelNotifier := context.WithCancel(rootCtx)
 	defer cancelNotifier()
-	go notifierSvc.Run(notifierCtx)
+
+	notifierWG.Add(1)
+	go func() {
+		defer notifierWG.Done()
+		notifierSvc.Run(notifierCtx)
+	}()
 
 	router := handler.NewRouter(handler.Dependencies{
 		Matching:      matchingSvc,
@@ -90,13 +97,14 @@ func main() {
 	<-rootCtx.Done()
 	log.Println("shutdown signal received")
 
-	cancelNotifier()
-
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelShutdown()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Printf("http server shutdown error: %v", err)
 	}
+
+	cancelNotifier()
+	notifierWG.Wait()
 	log.Println("shutdown complete")
 }

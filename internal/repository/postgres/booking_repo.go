@@ -175,6 +175,27 @@ func (r *BookingRepo) RescheduleWithQuota(ctx context.Context, bookingID, newSlo
 	}
 
 	oldSlotID := b.SlotID
+	if oldSlotID == newSlotID {
+		return &b, nil
+	}
+
+	// Блокируем строки обоих слотов в детерминированном порядке (ORDER BY id),
+	// чтобы исключить взаимные блокировки (deadlock) при параллельных перекрестных переносах.
+	firstID, secondID := oldSlotID, newSlotID
+	if firstID > secondID {
+		firstID, secondID = secondID, firstID
+	}
+	lockRows, err := tx.Query(ctx, `SELECT id FROM slots WHERE id IN ($1, $2) ORDER BY id FOR UPDATE`, firstID, secondID)
+	if err != nil {
+		return nil, fmt.Errorf("lock slots for reschedule: %w", err)
+	}
+	lockRows.Close()
+
+	const decQ = `
+		UPDATE slots SET quota_booked = GREATEST(quota_booked - 1, 0) WHERE id = $1`
+	if _, err := tx.Exec(ctx, decQ, oldSlotID); err != nil {
+		return nil, fmt.Errorf("release old slot quota: %w", err)
+	}
 
 	const incQ = `
 		UPDATE slots SET quota_booked = quota_booked + 1
@@ -185,12 +206,6 @@ func (r *BookingRepo) RescheduleWithQuota(ctx context.Context, bookingID, newSlo
 	}
 	if tag.RowsAffected() == 0 {
 		return nil, repository.ErrQuotaExceeded
-	}
-
-	const decQ = `
-		UPDATE slots SET quota_booked = GREATEST(quota_booked - 1, 0) WHERE id = $1`
-	if _, err := tx.Exec(ctx, decQ, oldSlotID); err != nil {
-		return nil, fmt.Errorf("release old slot quota: %w", err)
 	}
 
 	const updateBookingQ = `

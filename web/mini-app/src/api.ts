@@ -37,7 +37,7 @@ async function request<T>(path: string, maxUserID: string, init: RequestInit): P
 export function findSlots(maxUserID: string, sportType: string): Promise<{ results: VenueSlot[] }> {
   return request('/api/v1/search', maxUserID, {
     method: 'POST',
-    body: JSON.stringify({ sport_type: sportType, lat: 55.751244, lon: 37.618423, radius_km: 8 }),
+    body: JSON.stringify({ sport_type: sportType, lat: 55.751244, lon: 37.618423, radius_km: 15 }),
   })
 }
 

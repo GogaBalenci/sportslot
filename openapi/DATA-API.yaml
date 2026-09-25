@@ -1,0 +1,117 @@
+# 1. Версия конфигурации (версия схемы файла)
+config_version: "1.1"
+
+# 2. Наименование решения / идентификатор команды
+solution_name: "СпортСлот"
+team_id: "TEAM_ID_PLACEHOLDER"
+
+# 3. Базовый адрес API
+base_url: "http://localhost:8080"
+
+# 4-9. Перечень обязательных проверок с методами, параметрами, ролями,
+# статус-кодами и форматом ответа
+required_checks:
+  - name: "Поиск слотов по критериям и диапазону дат"
+    method: POST
+    path: "/api/v1/search"
+    role: "user"
+    request_params:
+      headers:
+        Content-Type: "application/json"
+        X-MAX-User-ID: "max-test-user-001"
+      body:
+        sport_type: "boxing"
+        lat: 55.751244
+        lon: 37.618423
+        radius_km: 15
+        date_from: "2026-09-29"
+        date_to: "2026-10-30"
+        time_from: "18:00"
+        time_to: "21:00"
+        level: "beginner"
+    expected_status: [200, 400]
+    expected_response:
+      content_type: "application/json"
+      required_fields: ["results", "meta.data_source", "meta.generated_at"]
+
+  - name: "Получение деталей площадки"
+    method: GET
+    path: "/api/v1/venues/{id}"
+    role: "user"
+    request_params:
+      path:
+        id: "a1111111-0000-0000-0000-000000000001"
+    expected_status: [200, 404]
+    expected_response:
+      content_type: "application/json"
+      required_fields: ["venue_id", "name", "address", "all_slots"]
+
+  - name: "Создание брони (с авторизацией по X-MAX-User-ID)"
+    method: POST
+    path: "/api/v1/bookings"
+    role: "user"
+    request_params:
+      headers:
+        Content-Type: "application/json"
+        X-MAX-User-ID: "max-test-user-001"
+      body:
+        slot_id: "b1111111-0000-0000-0000-000000000001"
+        source_channel: "miniapp"
+    expected_status: [201, 409, 400, 401]
+    expected_response:
+      content_type: "application/json"
+      required_fields: ["id", "status", "source_channel"]
+
+  - name: "Перенос брони на другой слот"
+    method: PATCH
+    path: "/api/v1/bookings/{id}/reschedule"
+    role: "user"
+    request_params:
+      headers:
+        X-MAX-User-ID: "max-test-user-001"
+      path:
+        id: "test-booking-uuid"
+      body:
+        new_slot_id: "b1111111-0000-0000-0000-000000000002"
+    expected_status: [200, 409, 404, 401]
+    expected_response:
+      content_type: "application/json"
+      required_fields: ["id", "slot_id", "status"]
+
+  - name: "Отмена брони"
+    method: DELETE
+    path: "/api/v1/bookings/{id}"
+    role: "user"
+    request_params:
+      headers:
+        X-MAX-User-ID: "max-test-user-001"
+      path:
+        id: "test-booking-uuid"
+    expected_status: [204, 404, 401]
+    expected_response:
+      content_type: "application/json"
+      required_fields: []
+
+  - name: "Список броней пользователя"
+    method: GET
+    path: "/api/v1/bookings/user/{user_id}"
+    role: "user"
+    request_params:
+      headers:
+        X-MAX-User-ID: "max-test-user-001"
+      path:
+        user_id: "c1111111-0000-0000-0000-000000000001"
+    expected_status: [200, 401]
+    expected_response:
+      content_type: "application/json"
+      required_fields: []
+
+  - name: "Health-check"
+    method: GET
+    path: "/api/v1/health"
+    role: "system"
+    request_params: {}
+    expected_status: [200]
+    expected_response:
+      content_type: "application/json"
+      required_fields: ["status"]
