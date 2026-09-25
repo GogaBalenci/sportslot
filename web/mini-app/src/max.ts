@@ -1,6 +1,36 @@
 export function initialiseMaxBridge(): void {
   window.WebApp?.ready?.()
   window.WebApp?.expand?.()
+  applyMaxTheme()
+
+  // Слушаем смену темы в мессенджере MAX
+  window.WebApp?.onEvent?.('themeChanged', applyMaxTheme)
+}
+
+export function applyMaxTheme(): void {
+  if (typeof document === 'undefined') return
+  const colorScheme = window.WebApp?.colorScheme
+  if (colorScheme === 'dark') {
+    document.documentElement.classList.add('dark')
+  } else {
+    document.documentElement.classList.remove('dark')
+  }
+}
+
+export function triggerHapticNotification(type: 'success' | 'error' | 'warning'): void {
+  try {
+    window.WebApp?.HapticFeedback?.notificationOccurred(type)
+  } catch {
+    // Graceful fallback вне платформы MAX
+  }
+}
+
+export function triggerHapticImpact(style: 'light' | 'medium' | 'heavy' = 'light'): void {
+  try {
+    window.WebApp?.HapticFeedback?.impactOccurred(style)
+  } catch {
+    // Graceful fallback вне платформы MAX
+  }
 }
 
 export function maxUserID(): string {

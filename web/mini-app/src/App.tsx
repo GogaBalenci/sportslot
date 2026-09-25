@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Panel } from '@maxhub/max-ui'
 import { createBooking, findSlots, type VenueSlot } from './api'
-import { maxUserID, maxUserName } from './max'
+import { maxUserID, maxUserName, triggerHapticImpact, triggerHapticNotification } from './max'
 
 const sports = [
   { value: 'boxing', label: 'Бокс' },
@@ -42,18 +42,27 @@ export default function App() {
     return () => { active = false }
   }, [sport, userID])
 
+  function handleSelectSport(newSport: string) {
+    if (newSport !== sport) {
+      triggerHapticImpact('light')
+      setSport(newSport)
+    }
+  }
+
   async function book(slotID: string) {
     setBookingSlotID(slotID)
     setMessage('')
     setStatusType('')
     try {
       await createBooking(userID, slotID)
+      triggerHapticNotification('success')
       setMessage('Место забронировано. Подтверждение придёт в чат MAX.')
       setStatusType('success')
       setSlots((current) => current.map((item) => item.slot.slot_id === slotID
         ? { ...item, slot: { ...item.slot, quota_available: Math.max(0, item.slot.quota_available - 1) } }
         : item))
     } catch (error) {
+      triggerHapticNotification('error')
       const errMsg = error instanceof Error ? error.message : 'Не удалось создать бронь'
       setMessage(errMsg)
       setStatusType('error')
@@ -77,7 +86,11 @@ export default function App() {
 
       <section className="filters" aria-label="Выбор вида спорта">
         {sports.map((item) => (
-          <button key={item.value} className={sport === item.value ? 'filter active' : 'filter'} onClick={() => setSport(item.value)}>
+          <button
+            key={item.value}
+            className={sport === item.value ? 'filter active' : 'filter'}
+            onClick={() => handleSelectSport(item.value)}
+          >
             {item.label}
           </button>
         ))}
