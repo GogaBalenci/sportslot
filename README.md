@@ -20,6 +20,69 @@
 | **4. Уточнение** | Звонит/пишет администратору, чтобы узнать про места | Телефон, мессенджер зала | Долгий ответ (часы/дни) или отсутствие ответа |
 | **5. Решение** | Принимает решение или откладывает | — | Из-за задержки мотивация падает, решение откладывается на 1–3 недели |
 
+```mermaid
+flowchart TD
+    Start(["Решение начать заниматься спортом"]) --> Search["Поиск секций в картах/соцсетях<br/>(3-5 разных источников)"]
+    Search --> OpenSite["Изучение сайта / группы зала"]
+    OpenSite --> CheckSched{"Расписание есть<br/>и актуально?"}
+    CheckSched -- Нет --> NextSource["Переход к следующему источнику"]
+    NextSource --> Search
+    CheckSched -- Да --> ManualCheck["Ручная сверка со своими<br/>свободными вечерами"]
+    ManualCheck --> SlotFit{"Подходит<br/>по времени?"}
+    SlotFit -- Нет --> Search
+    SlotFit -- Да --> CallAdmin["Звонок или сообщение<br/>администратору о наличии мест"]
+    
+    CallAdmin --> AdminResponse{"Ответ администратора"}
+    AdminResponse -- "Места есть" --> ManualBook["Ручная запись на визит"]
+    ManualBook --> FirstVisit(["Первое занятие 🏅"])
+    AdminResponse -- "Мест нет" --> Search
+    AdminResponse -- "Долгий ответ / игнор" --> Frustration["Падение мотивации<br/>(1-3 недели задержки)"]
+    Frustration --> GiveUp(["Отказ от идеи тренировок ❌"])
+    
+    style Frustration fill:#fee2e2,stroke:#ef4444,stroke-width:2px,color:#991b1b
+    style GiveUp fill:#fecaca,stroke:#dc2626,stroke-width:2px,color:#7f1d1d
+    style FirstVisit fill:#dcfce7,stroke:#22c55e,stroke-width:2px,color:#166534
+    style Start fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#075985
+```
+
+<details>
+<summary>📐 Исходный код PlantUML (As Is)</summary>
+
+```plantuml
+@startuml AsIs_SportSearch
+title As Is: Поиск и запись на спортивную секцию (сегодня)
+start
+:Пользователь решает начать заниматься спортом;
+:Ищет секции через поиск/карты/соцсети (3-5 разных источников);
+repeat
+  :Открывает сайт/страницу зала;
+  :Читает описание, ищет расписание;
+  if (Расписание указано и актуально?) then (нет)
+    :Переходит к следующему источнику;
+  else (да)
+    :Сверяет расписание со своими свободными вечерами вручную;
+  endif
+repeat while (Найден подходящий по времени вариант?) is (нет)
+->да;
+:Звонит или пишет администратору уточнить наличие мест;
+if (Ответ получен вовремя И места есть?) then (да)
+  :Договаривается о первом визите вручную;
+  :Приходит на первое занятие;
+elseif (Ответ получен, но мест нет?) then (да)
+  :Возвращается к поиску другого варианта;
+else (нет ответа вовремя)
+  #pink:Мотивация падает;
+  if (Продолжает поиск?) then (да)
+    :Возвращается к поиску другого варианта;
+  else (нет)
+    #pink:Отказывается от идеи заниматься спортом;
+  endif
+endif
+stop
+@enduml
+```
+</details>
+
 ### Процесс с продуктом «СпортСлот» (To Be)
 
 | Этап | Что происходит | Канал | Результат |
@@ -32,19 +95,165 @@
 | **6. Подтверждение**| Бот мгновенно отправляет подтверждение брони | Чат-бот MAX | Исключены звонки и ожидание ответа |
 | **7. Напоминание** | Фоновый воркер присылает напоминание за 1 час до начала | NotifierService | Снижение неявок на первое занятие |
 
+```mermaid
+flowchart TD
+    Start(["Пользователь открывает бота в MAX"]) --> Dialogue["Ответ на 3 вопроса через кнопки<br/>(вид спорта, время, район)"]
+    Dialogue --> Matching["matching-service ищет слоты<br/>в гарантированной квоте залов"]
+    
+    Matching --> HasSlots{"Есть подходящие<br/>варианты?"}
+    HasSlots -- Нет --> Expand["Предложение расширить радиус поиска"]
+    Expand --> Dialogue
+    
+    HasSlots -- Да --> ChatCards["Выдача 2-3 карточек в чате<br/>(Core / Fallback-канал)"]
+    
+    ChatCards --> Branch{"Выбор канала бронирования"}
+    
+    Branch -- "Быстро в чате" --> OneClickChat["Кнопка 'Забронировать' в чате"]
+    Branch -- "Визуальное сравнение" --> MiniApp["MAX Mini-App (MAX UI)<br/>Карта, фильтры, виброотклик"]
+    MiniApp --> OneClickApp["Кнопка 'Забронировать' в Mini-App"]
+    
+    OneClickChat --> BookingService["booking-service: атомарное списание<br/>из квоты (SELECT FOR UPDATE)"]
+    OneClickApp --> BookingService
+    
+    BookingService --> QuotaCheck{"Квота доступна?"}
+    QuotaCheck -- "Да (200 OK)" --> Confirmed["Мгновенное подтверждение в чат<br/>+ Нотификация NotifierService за 1 час"]
+    QuotaCheck -- "Исчерпана (409)" --> Alternative["Предложение альтернативного слота"]
+    Alternative --> ChatCards
+    
+    Confirmed --> Success(["Визит на тренировку 🎯 (≤ 3 мин на весь путь)"])
+    
+    style Start fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#075985
+    style Confirmed fill:#dcfce7,stroke:#22c55e,stroke-width:2px,color:#166534
+    style Success fill:#bbf7d0,stroke:#16a34a,stroke-width:2px,color:#14532d
+    style MiniApp fill:#fef3c7,stroke:#f59e0b,stroke-width:2px,color:#92400e
+    style BookingService fill:#ede9fe,stroke:#8b5cf6,stroke-width:2px,color:#5b21b6
+```
+
+<details>
+<summary>📐 Исходный код PlantUML (To Be)</summary>
+
+```plantuml
+@startuml ToBe_SportSlot_v2
+title To Be: Поиск и бронирование слота через "СпортСлот" (с fallback)
+start
+:Пользователь открывает чат-бота "СпортСлот" в MAX;
+:Отвечает на 3 вопроса (вид спорта, свободное время, район) через кнопки;
+:Backend (matching-service) ищет подходящие слоты в пределах квоты залов-партнёров;
+if (Есть подходящие варианты?) then (нет)
+  :Бот предлагает расширить критерии поиска;
+else (да)
+  :Бот выводит 2-3 варианта карточками прямо в чате (fallback-канал, всегда доступен);
+  if (Пользователь хочет визуальное сравнение?) then (да)
+    :Переход в мини-приложение (deep link, не обязателен);
+    :Показ карточек залов с расписанием и наличием мест в формате MAX UI;
+    :Пользователь выбирает вариант в мини-приложении;
+  else (нет, бронирует прямо в чате)
+    :Пользователь выбирает вариант кнопкой в чате;
+  endif
+  :Пользователь нажимает "Забронировать" (из чата или мини-приложения);
+  :Backend (booking-service) проверяет остаток квоты зала на выбранный слот;
+  if (Квота на слот ещё не исчерпана?) then (да)
+    :Резервирует место в рамках выделенной залом квоты;
+    :Бот присылает подтверждение брони (в чат, независимо от канала);
+    :Notifier планирует напоминание за 1 час до занятия;
+    :Пользователь приходит на первое занятие;
+  else (нет)
+    :Бот сообщает, что место только что заняли, предлагает альтернативу;
+  endif
+endif
+stop
+@enduml
+```
+</details>
+
 **Измеримый эффект:** время от старта диалога до подтверждённой брони сокращается с 40–60 минут (ручной поиск) до **≤ 3 минут**; число действий пользователя снижается с 5–7 до **≤ 4 шагов**.
 
 ---
 
 ## Архитектура
 
-```text
-MAX чат-бот ──webhook──> Go API ──> PostgreSQL 16
-     │                         │
-     └──deep link──> MAX mini-app (React + Vite + MAX UI)
-                              │
-                         REST /api/v1/*
+```mermaid
+flowchart LR
+    subgraph Client ["Клиентская среда MAX"]
+        Bot["MAX Чат-бот<br/>(Диалог, карточки, нотификации)"]
+        MiniApp["MAX Mini-App<br/>(React, MAX UI, Bridge, Haptics)"]
+    end
+
+    subgraph Backend ["Go API Backend (Chi Router)"]
+        Handler["HTTP Handlers & Middleware<br/>(X-MAX-User-ID Auth)"]
+        DialogSvc["DialogService<br/>(State Machine)"]
+        MatchSvc["MatchingService<br/>(Геопоиск 15 км)"]
+        BookSvc["BookingService<br/>(Транзакции квот)"]
+        NotifySvc["NotifierService<br/>(Фоновые напоминания)"]
+    end
+
+    subgraph Storage ["База данных"]
+        Postgres[("PostgreSQL 16<br/>ACID / SELECT FOR UPDATE")]
+    end
+
+    Bot -- "Webhook HTTPS" --> Handler
+    MiniApp -- "REST HTTPS /api/v1/*" --> Handler
+    Bot -. "Deep Link" .-> MiniApp
+    
+    Handler --> DialogSvc
+    Handler --> MatchSvc
+    Handler --> BookSvc
+    
+    DialogSvc --> MatchSvc
+    DialogSvc --> BookSvc
+    
+    MatchSvc --> Postgres
+    BookSvc --> Postgres
+    NotifySvc --> Postgres
+    NotifySvc -. "Push API" .-> Bot
 ```
+
+<details>
+<summary>📐 Исходный код PlantUML (Архитектура компонентов)</summary>
+
+```plantuml
+@startuml SportSlot_ComponentDiagram
+title Архитектура "СпортСлот": компоненты и взаимодействие
+skinparam componentStyle rectangle
+
+package "MAX Платформа" {
+  [Чат-бот MAX] as Bot
+  [Мини-приложение\n(React + MAX UI + MAX Bridge)] as MiniApp
+}
+
+package "Go API Backend" {
+  [Bot Webhook Handler] as BotHandler
+  [REST API Handler] as ApiHandler
+  [DialogService] as DialogSvc
+  [MatchingService] as MatchSvc
+  [BookingService] as BookSvc
+  [NotifierService] as NotifySvc
+}
+
+database "PostgreSQL 16" as DB {
+  [venues]
+  [slots]
+  [bookings]
+  [users]
+}
+
+Bot --> BotHandler : HTTPS webhook
+MiniApp --> ApiHandler : HTTPS REST (/api/v1/*)
+Bot ..> MiniApp : deep link
+
+BotHandler --> DialogSvc
+DialogSvc --> MatchSvc
+DialogSvc --> BookSvc
+ApiHandler --> MatchSvc
+ApiHandler --> BookSvc
+
+MatchSvc --> DB
+BookSvc --> DB : SELECT FOR UPDATE
+NotifySvc --> DB
+NotifySvc --> Bot : Push-напоминания
+@enduml
+```
+</details>
 
 - **Go API** — `chi`-роутер, сервисы поиска, бронирования, диалога и напоминаний; PostgreSQL-репозитории на `pgx/v5`.
 - **PostgreSQL 16** — хранит пользователей MAX, площадки, конкретные слоты и брони. При создании брони квота списывается атомарным `UPDATE ... WHERE quota_booked < quota_total` внутри транзакции. Перенос слота защищён от дедлоков детерминированной блокировкой строк `ORDER BY id FOR UPDATE`.
