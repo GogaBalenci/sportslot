@@ -41,6 +41,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	bookingH := NewBookingHandler(deps.Booking)
 	botH := NewBotWebhookHandler(deps.Dialog, deps.MaxClient, deps.WebhookSecret)
 
+	r.Get("/health", healthH.Health)
 	r.Get("/api/v1/health", healthH.Health)
 
 	r.Route("/api/v1", func(r chi.Router) {
