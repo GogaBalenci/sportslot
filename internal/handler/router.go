@@ -46,7 +46,7 @@ func NewRouter(deps Dependencies) http.Handler {
 
 	r.Get("/health", health.Health)
 	r.Route("/api/v1", func(r chi.Router) {
-                r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]interface{}{
 				"service": "СпортСлот API",
 				"docs":    "https://github.com/GogaBalenci/sportslot/blob/main/openapi/openapi.yaml",
