@@ -102,11 +102,11 @@ func routeURL(lat, lon float64) string {
 	return fmt.Sprintf("https://yandex.ru/maps/?rtext=~%.6f,%.6f&rtt=auto", lat, lon)
 }
 
-func sourceLabel(v *model.Venue, catalogDate time.Time) string {
-	if v.IsDemo() {
-		return "Демо-партнёр · модельные данные"
+func accessLabel(v *model.Venue) string {
+	if v.BookingMode == model.BookingModeInstant {
+		return "Онлайн-запись через СпортСлот"
 	}
-	return "Данные OpenStreetMap · выгрузка " + local(catalogDate).Format("02.01.2006")
+	return "Запись напрямую в зале"
 }
 
 func upperFirst(s string) string {

@@ -399,10 +399,10 @@ func resultsHeader(st state, cards []service.VenueCard) string {
 	}
 	text := fmt.Sprintf("%s, %s, %s.", catalog.SportTitle(st.Sport), strings.ToLower(catalog.WhenTitle(st.When)), where)
 	if bookable > 0 {
-		text += fmt.Sprintf("\n\nЗаписаться прямо здесь можно в %d %s, остальные — залы из открытого каталога с контактами.",
+		text += fmt.Sprintf("\n\nЗаписаться прямо здесь можно в %d %s, в остальных залах запись напрямую — дам контакты и маршрут.",
 			bookable, plural(bookable, "студию", "студии", "студий"))
 	} else {
-		text += "\n\nСвободных мест у партнёров на это время нет — вот залы из открытого каталога с контактами."
+		text += "\n\nСвободных мест с онлайн-записью на это время нет — вот залы, где можно записаться напрямую."
 	}
 	return text
 }
@@ -410,7 +410,7 @@ func resultsHeader(st state, cards []service.VenueCard) string {
 func (b *Bot) card(c service.VenueCard, st state) (string, mc.Keyboard) {
 	v := c.Venue
 	var t strings.Builder
-	t.WriteString(v.Name + "\n" + sourceLabel(&v, b.search.CatalogDate()) + "\n\n")
+	t.WriteString(v.Name + "\n" + accessLabel(&v) + "\n\n")
 	place := []string{}
 	if dt := districtTitle(v.District); dt != "" {
 		place = append(place, dt)
