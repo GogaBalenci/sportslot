@@ -53,3 +53,19 @@ export function maxUserName(): string | undefined {
   const user = window.WebApp?.initDataUnsafe?.user
   return user ? [user.first_name, user.last_name].filter(Boolean).join(' ') : undefined
 }
+
+// Вид спорта, с которым открыли приложение: из payload кнопки open_app
+// (start_param = "sport_boxing") или из query-параметра ?sport= (браузер).
+export function initialSport(fallback = 'boxing'): string {
+  const startParam = window.WebApp?.initDataUnsafe?.start_param
+  if (startParam?.startsWith('sport_')) {
+    return startParam.slice('sport_'.length)
+  }
+  if (typeof window !== 'undefined' && window.location?.search) {
+    const param = new URLSearchParams(window.location.search).get('sport')
+    if (param) {
+      return param
+    }
+  }
+  return fallback
+}

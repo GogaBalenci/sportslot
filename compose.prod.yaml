@@ -1,0 +1,45 @@
+# Продакшен-надстройка для деплоя на сервер с доменом.
+# Запуск:  docker compose -f compose.yaml -f compose.prod.yaml up -d --build
+#
+# Caddy принимает HTTPS на 443, сам получает сертификат Let's Encrypt
+# и раздаёт с одного домена:
+#   /bot/webhook, /api/*, /health -> Go API
+#   всё остальное                 -> мини-приложение
+services:
+  api:
+    environment:
+      TZ: Europe/Moscow
+      MAX_WEBHOOK_URL: https://${DOMAIN:?set DOMAIN in .env}/bot/webhook
+      MINI_APP_URL: https://${DOMAIN}/
+      CORS_ORIGINS: https://${DOMAIN}
+    restart: unless-stopped
+
+  mini-app:
+    build:
+      args:
+        # Пустое значение = запросы к API с того же домена (без CORS).
+        VITE_API_BASE_URL: ""
+    restart: unless-stopped
+
+  db:
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.8-alpine
+    depends_on:
+      - api
+      - mini-app
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy-data:
+  caddy-config:

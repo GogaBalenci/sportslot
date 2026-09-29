@@ -9,6 +9,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	_ "time/tzdata" // часовой пояс из TZ (Europe/Moscow) без tzdata в образе
 
 	"sportslot/internal/config"
 	"sportslot/internal/handler"
@@ -55,6 +56,7 @@ func main() {
 	log.Println("seed data check complete")
 
 	maxClient := maxclient.NewClient(cfg.MaxBotAPIBaseURL, cfg.MaxBotAPIToken)
+	initMaxBot(rootCtx, maxClient, cfg)
 	matchingSvc := service.NewMatchingService(venueRepo, slotRepo)
 	bookingSvc := service.NewBookingService(bookingRepo, slotRepo, userRepo)
 	dialogSvc := service.NewDialogService(matchingSvc, bookingSvc, cfg.MiniAppURL)
@@ -77,6 +79,7 @@ func main() {
 		MaxClient:     maxClient,
 		CORSOrigins:   cfg.CORSOrigins,
 		WebhookSecret: cfg.MaxWebhookSecret,
+		MiniAppButton: cfg.MiniAppButton,
 	})
 
 	srv := &http.Server{
@@ -107,4 +110,38 @@ func main() {
 	cancelNotifier()
 	notifierWG.Wait()
 	log.Println("shutdown complete")
+}
+
+// initMaxBot проверяет токен (GET /me) и регистрирует webhook, если задан
+// MAX_WEBHOOK_URL. Ошибки не фатальны: REST API и мини-приложение работают
+// и без связи с MAX, а подписку можно повторить скриптом deploy/max-webhook.sh.
+func initMaxBot(ctx context.Context, client *maxclient.Client, cfg *config.Config) {
+	if !client.Enabled() {
+		log.Println("MAX_BOT_API_TOKEN is empty: bot messages are disabled (local demo mode)")
+		return
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	info, err := client.Bot(reqCtx)
+	if err != nil {
+		log.Printf("MAX bot check failed (GET /me): %v", err)
+	} else {
+		log.Printf("MAX bot: @%s (id %d), link: https://max.ru/%s", info.Username, info.UserID, info.Username)
+	}
+
+	if err := client.SetCommands(reqCtx, map[string]string{"start": "Подобрать тренировку"}); err != nil {
+		log.Printf("MAX set commands failed: %v", err)
+	}
+
+	if cfg.MaxWebhookURL == "" {
+		log.Println("MAX_WEBHOOK_URL is empty: webhook subscription skipped")
+		return
+	}
+	updateTypes := []string{"message_created", "message_callback", "bot_started"}
+	if err := client.Subscribe(reqCtx, cfg.MaxWebhookURL, cfg.MaxWebhookSecret, updateTypes); err != nil {
+		log.Printf("MAX webhook subscribe failed: %v", err)
+		return
+	}
+	log.Printf("MAX webhook subscribed: %s", cfg.MaxWebhookURL)
 }

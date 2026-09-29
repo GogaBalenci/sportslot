@@ -25,9 +25,11 @@ services:
     environment:
       HTTP_PORT: 8080
       DATABASE_URL: postgresql://sportslot:${POSTGRES_PASSWORD:-sportslot_dev_pass}@db:5432/sportslot?sslmode=disable
-      MAX_BOT_API_BASE_URL: ${MAX_BOT_API_BASE_URL:-https://botapi.max.ru}
+      MAX_BOT_API_BASE_URL: ${MAX_BOT_API_BASE_URL:-https://platform-api2.max.ru}
       MAX_BOT_API_TOKEN: ${MAX_BOT_API_TOKEN:-}
       MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET:-dev_webhook_secret}
+      MAX_WEBHOOK_URL: ${MAX_WEBHOOK_URL:-}
+      MINI_APP_BUTTON: ${MINI_APP_BUTTON:-link}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       MINI_APP_URL: ${MINI_APP_URL:-http://localhost:5173}
       NOTIFIER_INTERVAL_SECONDS: ${NOTIFIER_INTERVAL_SECONDS:-120}

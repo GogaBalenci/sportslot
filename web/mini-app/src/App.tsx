@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Panel } from '@maxhub/max-ui'
 import { createBooking, findSlots, type VenueSlot } from './api'
-import { maxUserID, maxUserName, triggerHapticImpact, triggerHapticNotification } from './max'
+import { initialSport, maxUserID, maxUserName, triggerHapticImpact, triggerHapticNotification } from './max'
 
 const sports = [
   { value: 'boxing', label: 'Бокс' },
@@ -14,9 +14,7 @@ function formatDate(value: string): string {
 }
 
 export default function App() {
-  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
-  const initialSport = searchParams?.get('sport') || 'boxing'
-  const [sport, setSport] = useState(initialSport)
+  const [sport, setSport] = useState(() => initialSport())
   const [slots, setSlots] = useState<VenueSlot[]>([])
   const [loading, setLoading] = useState(true)
   const [bookingSlotID, setBookingSlotID] = useState<string | null>(null)
