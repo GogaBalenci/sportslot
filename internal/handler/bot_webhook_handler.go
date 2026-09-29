@@ -1,79 +1,57 @@
 package handler
 
 import (
-	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
-	"strings"
+	"strconv"
 	"time"
 
-	"sportslot/internal/maxclient"
-	"sportslot/internal/service"
+	"sportslot/internal/bot"
 )
 
-type BotWebhookHandler struct {
-	dialog     *service.DialogService
-	maxClient  *maxclient.Client
-	secret     string
-	useOpenApp bool
-}
-
-func NewBotWebhookHandler(dialog *service.DialogService, maxClient *maxclient.Client, secret string, useOpenApp bool) *BotWebhookHandler {
-	return &BotWebhookHandler{dialog: dialog, maxClient: maxClient, secret: secret, useOpenApp: useOpenApp}
-}
-
-// flexID принимает идентификатор MAX и как число (так приходит из MAX Bot API),
-// и как строку (удобно для ручных curl-проверок).
-type flexID string
-
-func (f *flexID) UnmarshalJSON(b []byte) error {
-	b = bytes.TrimSpace(b)
-	if len(b) == 0 || string(b) == "null" {
-		*f = ""
-		return nil
-	}
-	if b[0] == '"' {
-		var s string
-		if err := json.Unmarshal(b, &s); err != nil {
-			return err
-		}
-		*f = flexID(s)
-		return nil
-	}
-	var n json.Number
-	if err := json.Unmarshal(b, &n); err != nil {
-		return err
-	}
-	*f = flexID(n.String())
-	return nil
+// BotWebhook принимает обновления MAX (POST /bot/webhook).
+type BotWebhook struct {
+	bot    *bot.Bot
+	secret string
 }
 
 type maxUser struct {
-	UserID    flexID `json:"user_id"`
+	UserID    int64  `json:"user_id"`
 	FirstName string `json:"first_name"`
 	LastName  string `json:"last_name"`
 	Name      string `json:"name"`
-	IsBot     bool   `json:"is_bot"`
 }
 
-func (u maxUser) displayName() string {
-	if n := strings.TrimSpace(u.FirstName + " " + u.LastName); n != "" {
-		return n
+func (u maxUser) id() string { return strconv.FormatInt(u.UserID, 10) }
+
+func (u maxUser) fullName() string {
+	if u.FirstName != "" || u.LastName != "" {
+		return u.FirstName + " " + u.LastName
 	}
 	return u.Name
 }
 
-// incomingUpdate — подмножество объекта Update MAX Bot API
-// (https://dev.max.ru/docs-api/objects/Update), нужное для сценария бота.
-type incomingUpdate struct {
+type rawAttachment struct {
+	Type      string   `json:"type"`
+	Latitude  *float64 `json:"latitude"`
+	Longitude *float64 `json:"longitude"`
+	Payload   *struct {
+		Latitude  *float64 `json:"latitude"`
+		Longitude *float64 `json:"longitude"`
+	} `json:"payload"`
+}
+
+type update struct {
 	UpdateType string `json:"update_type"`
 	Message    *struct {
 		Sender maxUser `json:"sender"`
 		Body   struct {
-			Text string `json:"text"`
+			Text        string          `json:"text"`
+			Attachments []rawAttachment `json:"attachments"`
 		} `json:"body"`
 	} `json:"message"`
 	Callback *struct {
@@ -81,109 +59,75 @@ type incomingUpdate struct {
 		Payload    string  `json:"payload"`
 		User       maxUser `json:"user"`
 	} `json:"callback"`
-	// bot_started: пользователь нажал «Начать» / перешёл по ссылке на бота.
-	User    *maxUser `json:"user"`
-	Payload string   `json:"payload"`
+	User *maxUser `json:"user"`
 }
 
-func (h *BotWebhookHandler) authorized(r *http.Request) bool {
-	got := r.Header.Get("X-Max-Bot-Api-Secret")
-	if got == "" {
-		// Обратная совместимость с локальными curl-сценариями из README.
-		got = r.Header.Get("X-Webhook-Secret")
-	}
-	return subtle.ConstantTimeCompare([]byte(got), []byte(h.secret)) == 1
-}
-
-// HandleWebhook принимает события MAX. На любое корректно авторизованное
-// событие отвечаем 200: иначе MAX повторяет доставку, а после 8 часов
-// ошибок автоматически отписывает бота от webhook.
-func (h *BotWebhookHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
-	if !h.authorized(r) {
-		writeError(w, http.StatusUnauthorized, "invalid_webhook_secret", "Недействительный секрет webhook")
-		return
-	}
-
-	var update incomingUpdate
-	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
-		log.Printf("bot webhook: bad body: %v", err)
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
-		return
-	}
-
-	var (
-		user       maxUser
-		text       string
-		callbackID string
-	)
-	switch update.UpdateType {
-	case "message_created":
-		if update.Message == nil {
-			break
-		}
-		user = update.Message.Sender
-		text = update.Message.Body.Text
-	case "message_callback":
-		if update.Callback == nil {
-			break
-		}
-		user = update.Callback.User
-		text = update.Callback.Payload
-		callbackID = update.Callback.CallbackID
+// incoming переводит Update MAX в событие сценария бота.
+func (u update) incoming() (bot.Incoming, bool) {
+	switch u.UpdateType {
 	case "bot_started":
-		if update.User != nil {
-			user = *update.User
+		if u.User == nil {
+			return bot.Incoming{}, false
 		}
-		text = "/start"
-	default:
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
-		return
+		return bot.Incoming{MaxUserID: u.User.id(), Name: u.User.fullName(), Started: true}, true
+	case "message_callback":
+		if u.Callback == nil {
+			return bot.Incoming{}, false
+		}
+		return bot.Incoming{MaxUserID: u.Callback.User.id(), Name: u.Callback.User.fullName(),
+			Payload: u.Callback.Payload, CallbackID: u.Callback.CallbackID}, true
+	case "message_created":
+		if u.Message == nil || u.Message.Sender.UserID == 0 {
+			return bot.Incoming{}, false
+		}
+		in := bot.Incoming{MaxUserID: u.Message.Sender.id(), Name: u.Message.Sender.fullName(), Text: u.Message.Body.Text}
+		for _, a := range u.Message.Body.Attachments {
+			if a.Type != "location" {
+				continue
+			}
+			lat, lon := a.Latitude, a.Longitude
+			if (lat == nil || lon == nil) && a.Payload != nil {
+				lat, lon = a.Payload.Latitude, a.Payload.Longitude
+			}
+			if lat != nil && lon != nil {
+				in.HasLocation, in.Lat, in.Lon = true, *lat, *lon
+			}
+		}
+		return in, true
 	}
+	return bot.Incoming{}, false
+}
 
-	maxUserID := string(user.UserID)
-	if maxUserID == "" || user.IsBot {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
-		return
-	}
-
-	// Ответ MAX не должен зависеть от тайм-аута входящего запроса.
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-
-	if callbackID != "" {
-		if err := h.maxClient.AnswerCallback(ctx, callbackID, "Принято"); err != nil {
-			log.Printf("bot webhook: answer callback error: %v", err)
+func (h *BotWebhook) Handle(w http.ResponseWriter, r *http.Request) {
+	if h.secret != "" {
+		got := r.Header.Get("X-Max-Bot-Api-Secret")
+		if subtle.ConstantTimeCompare([]byte(got), []byte(h.secret)) != 1 {
+			writeError(w, http.StatusUnauthorized, "invalid_secret", "Неверный секрет webhook")
+			return
 		}
 	}
-
-	resp, err := h.dialog.HandleMessage(ctx, maxUserID, user.displayName(), text)
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
-		log.Printf("bot webhook: dialog handle error: %v", err)
-		resp = &service.DialogResponse{Text: maxclient.MsgInternalError}
+		writeError(w, http.StatusBadRequest, "invalid_body", "Не удалось прочитать тело запроса")
+		return
 	}
-
-	buttons := resp.Buttons
-	if resp.MiniAppLink != "" {
-		if h.useOpenApp {
-			// Мини-приложение привязано к боту в кабинете MAX: открываем внутри
-			// мессенджера. Если MAX отклонит кнопку, сообщение уйдёт без неё.
-			buttons = append(buttons, maxclient.MessageButton{
-				Text:    "Сравнить в приложении",
-				OpenApp: true,
-				Payload: resp.MiniAppPayload,
-			})
-		} else {
-			// Без доступа к кабинету бота: обычная ссылка с sport и user в query.
-			buttons = append(buttons, maxclient.MessageButton{
-				Text: "Сравнить в приложении",
-				URL:  resp.MiniAppLink,
-			})
-		}
+	var upd update
+	if err := json.Unmarshal(body, &upd); err != nil {
+		log.Printf("webhook: bad update: %v", err)
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
 	}
-
-	if err := h.maxClient.SendMessage(ctx, maxUserID, resp.Text, buttons); err != nil {
-		log.Printf("bot webhook: send message error: %v", err)
+	in, ok := upd.incoming()
+	if !ok {
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
 	}
-
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	// MAX ждёт быстрый ответ, а сценарий может отправить несколько сообщений —
+	// обрабатываем событие в фоне со своим таймаутом.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		h.bot.Handle(ctx, in)
+	}()
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
