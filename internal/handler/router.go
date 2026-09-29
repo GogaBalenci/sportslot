@@ -46,6 +46,17 @@ func NewRouter(deps Dependencies) http.Handler {
 
 	r.Get("/health", health.Health)
 	r.Route("/api/v1", func(r chi.Router) {
+                r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"service": "СпортСлот API",
+				"docs":    "https://github.com/GogaBalenci/sportslot/blob/main/openapi/openapi.yaml",
+				"health":  "/api/v1/health",
+				"endpoints": []string{
+					"GET /api/v1/catalog", "GET /api/v1/venues", "GET /api/v1/venues/{id}",
+					"POST /api/v1/search", "POST /api/v1/quiz/recommend", "GET /api/v1/stats",
+				},
+			})
+		})
 		r.Get("/health", health.Health)
 		r.Get("/catalog", api.Catalog)
 		r.Post("/quiz/recommend", api.QuizRecommend)
