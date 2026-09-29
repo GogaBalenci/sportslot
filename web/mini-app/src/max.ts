@@ -1,71 +1,87 @@
-export function initialiseMaxBridge(): void {
-  window.WebApp?.ready?.()
-  window.WebApp?.expand?.()
-  applyMaxTheme()
+// Обёртка над MAX Bridge (https://dev.max.ru/docs/webapps/bridge).
+// Вне MAX все методы тихо ничего не делают, и приложение работает в браузере.
 
-  // Слушаем смену темы в мессенджере MAX
-  window.WebApp?.onEvent?.('themeChanged', applyMaxTheme)
+const app = (): MaxWebApp | undefined => window.WebApp
+
+export function initBridge(): void {
+  app()?.ready?.()
+  app()?.expand?.()
 }
 
-export function applyMaxTheme(): void {
-  if (typeof document === 'undefined') return
-  const colorScheme = window.WebApp?.colorScheme
-  if (colorScheme === 'dark') {
-    document.documentElement.classList.add('dark')
+export function initData(): string {
+  return app()?.initData ?? ''
+}
+
+export function insideMax(): boolean {
+  return initData() !== ''
+}
+
+// Параметр запуска: из ссылки https://max.ru/<бот>?startapp=X, кнопки open_app
+// или из ?start=X, когда приложение открыто обычной ссылкой.
+export function startParam(): string {
+  const fromMax = app()?.initDataUnsafe?.start_param
+  if (fromMax) return fromMax
+  return new URLSearchParams(window.location.search).get('start') ?? ''
+}
+
+export function userFirstName(): string {
+  return app()?.initDataUnsafe?.user?.first_name ?? ''
+}
+
+// Тактильный отклик есть только в мобильных клиентах.
+function mobile(): boolean {
+  const p = app()?.platform
+  return p === 'ios' || p === 'android'
+}
+
+export function haptic(type: 'success' | 'error' | 'warning' | 'tap'): void {
+  if (!mobile()) return
+  try {
+    if (type === 'tap') app()?.HapticFeedback?.impactOccurred('light')
+    else app()?.HapticFeedback?.notificationOccurred(type)
+  } catch {
+    /* клиент без поддержки */
+  }
+}
+
+export function openExternal(url: string): void {
+  const open = app()?.openLink
+  if (open) open(url)
+  else window.open(url, '_blank', 'noopener')
+}
+
+export function brightenScreen(): void {
+  if (!mobile()) return
+  app()?.requestScreenMaxBrightness?.().catch(() => undefined)
+}
+
+export function restoreBrightness(): void {
+  if (!mobile()) return
+  app()?.restoreScreenBrightness?.().catch(() => undefined)
+}
+
+export function canScanQR(): boolean {
+  return typeof app()?.openCodeReader === 'function' && app()?.platform !== 'web'
+}
+
+export async function scanQR(): Promise<string> {
+  const res = await app()!.openCodeReader!(false)
+  if (typeof res === 'string') return res
+  return res?.value ?? res?.text ?? ''
+}
+
+// Системная кнопка «Назад»: один обработчик на всё приложение.
+let backHandler: (() => void) | null = null
+
+export function setBackButton(handler: (() => void) | null): void {
+  const button = app()?.BackButton
+  if (!button) return
+  if (backHandler) button.offClick(backHandler)
+  backHandler = handler
+  if (handler) {
+    button.onClick(handler)
+    button.show()
   } else {
-    document.documentElement.classList.remove('dark')
+    button.hide()
   }
-}
-
-export function triggerHapticNotification(type: 'success' | 'error' | 'warning'): void {
-  try {
-    window.WebApp?.HapticFeedback?.notificationOccurred(type)
-  } catch {
-    // Graceful fallback вне платформы MAX
-  }
-}
-
-export function triggerHapticImpact(style: 'light' | 'medium' | 'heavy' = 'light'): void {
-  try {
-    window.WebApp?.HapticFeedback?.impactOccurred(style)
-  } catch {
-    // Graceful fallback вне платформы MAX
-  }
-}
-
-export function maxUserID(): string {
-  const id = window.WebApp?.initDataUnsafe?.user?.id
-  if (id) {
-    return String(id)
-  }
-  if (typeof window !== 'undefined' && window.location?.search) {
-    const param = new URLSearchParams(window.location.search).get('user')
-    if (param) {
-      return param
-    }
-  }
-  // Используется только при открытии приложения вне MAX, чтобы локально
-  // воспроизвести API-сценарий с тестовыми данными.
-  return import.meta.env.VITE_DEMO_MAX_USER_ID || 'max-test-user-001'
-}
-
-export function maxUserName(): string | undefined {
-  const user = window.WebApp?.initDataUnsafe?.user
-  return user ? [user.first_name, user.last_name].filter(Boolean).join(' ') : undefined
-}
-
-// Вид спорта, с которым открыли приложение: из payload кнопки open_app
-// (start_param = "sport_boxing") или из query-параметра ?sport= (браузер).
-export function initialSport(fallback = 'boxing'): string {
-  const startParam = window.WebApp?.initDataUnsafe?.start_param
-  if (startParam?.startsWith('sport_')) {
-    return startParam.slice('sport_'.length)
-  }
-  if (typeof window !== 'undefined' && window.location?.search) {
-    const param = new URLSearchParams(window.location.search).get('sport')
-    if (param) {
-      return param
-    }
-  }
-  return fallback
 }
