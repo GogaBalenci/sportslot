@@ -2,26 +2,45 @@ package model
 
 import "time"
 
-// Slot - конкретная тренировка на конкретную дату и время (start_at/end_at),
-// с гарантированной квотой мест, выделенной залом-партнёром сервису
-// (модель аллокации, см. продуктовые допущения MVP). Привязка к точному
-// start_at/end_at (а не к шаблону дня недели) устраняет баг, при котором
-// квота списывалась бы навсегда и не различала тренировки разных недель.
+// Slot — конкретное занятие с квотой мест, которую студия выделила сервису.
 type Slot struct {
-	ID          string    `json:"id" db:"id"`
-	VenueID     string    `json:"venue_id" db:"venue_id"`
-	StartAt     time.Time `json:"start_at" db:"start_at"`
-	EndAt       time.Time `json:"end_at" db:"end_at"`
-	QuotaTotal  int       `json:"quota_total" db:"quota_total"`
-	QuotaBooked int       `json:"quota_booked" db:"quota_booked"`
-	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+	ID          string    `json:"id"`
+	VenueID     string    `json:"venue_id"`
+	Title       string    `json:"title"`
+	SportType   string    `json:"sport_type"`
+	Level       string    `json:"level"`
+	StartAt     time.Time `json:"start_at"`
+	EndAt       time.Time `json:"end_at"`
+	QuotaTotal  int       `json:"quota_total"`
+	QuotaBooked int       `json:"quota_booked"`
 }
 
-// QuotaAvailable возвращает количество свободных мест в рамках выделенной квоты.
 func (s *Slot) QuotaAvailable() int {
-	available := s.QuotaTotal - s.QuotaBooked
-	if available < 0 {
-		return 0
+	if available := s.QuotaTotal - s.QuotaBooked; available > 0 {
+		return available
 	}
-	return available
+	return 0
+}
+
+// SlotInfo — слот в ответах API.
+type SlotInfo struct {
+	SlotID         string    `json:"slot_id"`
+	Title          string    `json:"title"`
+	SportType      string    `json:"sport_type"`
+	StartAt        time.Time `json:"start_at"`
+	EndAt          time.Time `json:"end_at"`
+	QuotaTotal     int       `json:"quota_total"`
+	QuotaAvailable int       `json:"quota_available"`
+}
+
+func (s *Slot) Info() SlotInfo {
+	return SlotInfo{
+		SlotID:         s.ID,
+		Title:          s.Title,
+		SportType:      s.SportType,
+		StartAt:        s.StartAt,
+		EndAt:          s.EndAt,
+		QuotaTotal:     s.QuotaTotal,
+		QuotaAvailable: s.QuotaAvailable(),
+	}
 }
