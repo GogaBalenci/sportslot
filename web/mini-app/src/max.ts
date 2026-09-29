@@ -44,10 +44,19 @@ export function haptic(type: 'success' | 'error' | 'warning' | 'tap'): void {
   }
 }
 
+// Внешние ссылки (маршрут, сайт) открываются через Bridge: метод вызывается
+// у объекта WebApp, иначе он теряет контекст и ссылка не открывается.
 export function openExternal(url: string): void {
-  const open = app()?.openLink
-  if (open) open(url)
-  else window.open(url, '_blank', 'noopener')
+  const webApp = app()
+  if (webApp?.openLink && insideMax()) {
+    try {
+      webApp.openLink(url)
+      return
+    } catch {
+      /* откроем обычным способом */
+    }
+  }
+  window.open(url, '_blank', 'noopener')
 }
 
 export function brightenScreen(): void {
