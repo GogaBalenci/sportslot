@@ -32,8 +32,12 @@ services:
       MINI_APP_BUTTON: ${MINI_APP_BUTTON:-link}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       MINI_APP_URL: ${MINI_APP_URL:-http://localhost:5173}
-      NOTIFIER_INTERVAL_SECONDS: ${NOTIFIER_INTERVAL_SECONDS:-120}
-      SEED_DATA_PATH: seed-data/venues.json
+      NOTIFIER_INTERVAL_SECONDS: ${NOTIFIER_INTERVAL_SECONDS:-60}
+      APP_ENV: ${APP_ENV:-dev}
+      CATALOG_PATH: seed-data/rostov_catalog.json
+      DEMO_DATA: ${DEMO_DATA:-on}
+      PARTNER_DEMO_CODE: ${PARTNER_DEMO_CODE:-}
+      TEST_MAX_USER_IDS: ${TEST_MAX_USER_IDS:-max-test-user-001}
     ports:
       - "${API_PORT:-8080}:8080"
 
@@ -43,6 +47,7 @@ services:
       dockerfile: web/mini-app/Dockerfile
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
+        VITE_DEV_MAX_USER_ID: ${VITE_DEV_MAX_USER_ID:-}
     depends_on:
       api:
         condition: service_started

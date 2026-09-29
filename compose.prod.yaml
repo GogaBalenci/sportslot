@@ -9,6 +9,7 @@ services:
   api:
     environment:
       TZ: Europe/Moscow
+      APP_ENV: prod
       MAX_WEBHOOK_URL: https://${DOMAIN:?set DOMAIN in .env}/bot/webhook
       MINI_APP_URL: https://${DOMAIN}/
       CORS_ORIGINS: https://${DOMAIN}
@@ -19,6 +20,7 @@ services:
       args:
         # Пустое значение = запросы к API с того же домена (без CORS).
         VITE_API_BASE_URL: ""
+        VITE_DEV_MAX_USER_ID: ""
     restart: unless-stopped
 
   db:
