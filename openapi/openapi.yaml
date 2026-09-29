@@ -1,118 +1,267 @@
 openapi: 3.0.3
 info:
   title: СпортСлот API
-  version: "0.2.0"
-  description: >
-    API для поиска и бронирования спортивных слотов в рамках MVP.
-    Данные площадок тестовые (source_ref: test-data), структура
-    основана на Всероссийском реестре объектов спорта Минспорта России.
-    Бронирование работает по модели гарантированной квоты (allocation model),
-    выделенной залом-партнёром, без прямой интеграции с ERP зала.
-    Каждый слот привязан к конкретной дате и времени (start_at/end_at),
-    а не к шаблону дня недели.
-    Авторизация запросов из мини-приложения выполняется по заголовку
-    X-MAX-User-ID (упрощение MVP; для продакшена требуется верификация
-    подписи initData на стороне MAX Bridge).
+  version: "2.0.0"
+  description: |
+    API чат-бота и мини-приложения СпортСлот (пилот — Ростов-на-Дону).
+
+    Данные: каталог площадок — реальные объекты OpenStreetMap (ODbL);
+    студии с онлайн-записью — демо-партнёры с модельным расписанием
+    (`source: demo_partner`), их можно отключить переменной DEMO_DATA=off.
+
+    Авторизация пользователя: `Authorization: tma <initData>` — подписанные
+    данные запуска мини-приложения MAX, проверяются по алгоритму
+    https://dev.max.ru/docs/webapps/validation. Заголовок `X-MAX-User-ID`
+    принимается только для тестовых учётных записей (TEST_MAX_USER_IDS).
+
+    Кабинет студии: `POST /partner/login` с кодом доступа возвращает токен,
+    который передаётся как `Authorization: Partner <token>`.
 servers:
+  - url: https://sportslot.space
+    description: Пилотный сервер
   - url: http://localhost:8080
-    description: Локальный сервер разработки
-  - url: https://api.sportslot.example.com
-    description: Продакшен/демо-сервер
+    description: Локальный запуск (docker compose up)
 tags:
-  - name: search
-  - name: bookings
   - name: system
+  - name: catalog
+  - name: bookings
+  - name: partner
 paths:
-  /api/v1/search:
+  /api/v1/health:
+    get:
+      tags: [system]
+      summary: Проверка работоспособности
+      responses:
+        "200":
+          description: Сервис работает
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, example: ok }
+  /api/v1/stats:
+    get:
+      tags: [system]
+      summary: Воронка пилота за 30 дней (уникальные пользователи по шагам, без персональных данных)
+      responses:
+        "200":
+          description: Агрегаты
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  since: { type: string, format: date-time }
+                  unique_users:
+                    type: object
+                    additionalProperties: { type: integer }
+                    example: { start: 40, quiz_done: 18, search: 35, booking_created: 12, attended: 5 }
+  /api/v1/catalog:
+    get:
+      tags: [catalog]
+      summary: Справочники — виды спорта, районы, окна времени, вопросы подбора, источники данных
+      responses:
+        "200":
+          description: Справочники
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Catalog" }
+  /api/v1/quiz/recommend:
     post:
-      tags: [search]
-      summary: Поиск доступных слотов по критериям
-      parameters:
-        - $ref: '#/components/parameters/MaxUserIdHeader'
+      tags: [catalog]
+      summary: Подбор вида спорта по ответам (детерминированный, с объяснением)
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SearchRequest'
+              type: object
+              properties:
+                answers:
+                  type: object
+                  additionalProperties: { type: string }
+                  example: { goal: stress, water: love, format: solo, pace: calm, contact: "no" }
       responses:
-        '200':
-          description: Список подходящих вариантов
+        "200":
+          description: До трёх видов спорта
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SearchResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: "#/components/schemas/QuizResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /api/v1/venues:
+    get:
+      tags: [catalog]
+      summary: Площадки по фильтрам — сначала студии с онлайн-записью, затем каталог OSM по расстоянию
+      parameters:
+        - { name: sport, in: query, schema: { $ref: "#/components/schemas/SportId" } }
+        - { name: when, in: query, schema: { type: string, enum: [today, tomorrow, weekday_eve, weekend, any] } }
+        - { name: district, in: query, schema: { type: string, example: sovetsky } }
+        - { name: lat, in: query, schema: { type: number, example: 47.2336 } }
+        - { name: lon, in: query, schema: { type: number, example: 39.6179 } }
+        - { name: instant_only, in: query, schema: { type: boolean } }
+      responses:
+        "200":
+          description: Карточки площадок
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [venues, meta]
+                properties:
+                  venues:
+                    type: array
+                    items: { $ref: "#/components/schemas/VenueCard" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /api/v1/venues/{id}:
     get:
-      tags: [search]
-      summary: Детали площадки и её слоты
+      tags: [catalog]
+      summary: Площадка и её расписание на 14 дней
       parameters:
-        - $ref: '#/components/parameters/VenueId'
+        - $ref: "#/components/parameters/Id"
       responses:
-        '200':
-          description: Детали площадки
+        "200":
+          description: Площадка
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VenueDetails" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/search:
+    post:
+      tags: [catalog]
+      summary: Свободные занятия с онлайн-записью в радиусе от точки (совместимость с MVP)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sport_type]
+              properties:
+                sport_type: { $ref: "#/components/schemas/SportId" }
+                lat: { type: number, example: 47.2225 }
+                lon: { type: number, example: 39.7185 }
+                radius_km: { type: number, example: 20 }
+                date_from: { type: string, format: date }
+                date_to: { type: string, format: date }
+                time_from: { type: string, example: "18:00" }
+                time_to: { type: string, example: "21:00" }
+                level: { type: string, example: beginner }
+      responses:
+        "200":
+          description: Найденные занятия
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VenueDetails'
-        '404':
-          $ref: '#/components/responses/NotFound'
+                type: object
+                required: [results, meta]
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: "#/components/schemas/SlotResult" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /api/v1/me:
+    get:
+      tags: [bookings]
+      summary: Текущий пользователь и его записи
+      security: [{ initData: [] }, { testUser: [] }]
+      responses:
+        "200":
+          description: Пользователь и записи
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    type: object
+                    properties:
+                      id: { type: string, format: uuid }
+                      name: { type: string }
+                  bookings:
+                    type: array
+                    items: { $ref: "#/components/schemas/BookingView" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/bookings:
     post:
       tags: [bookings]
-      summary: Создать бронь
-      parameters:
-        - $ref: '#/components/parameters/MaxUserIdHeaderRequired'
+      summary: Записаться на занятие (идемпотентно)
+      security: [{ initData: [] }, { testUser: [] }]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/BookingCreateRequest'
+              type: object
+              required: [slot_id]
+              properties:
+                slot_id: { type: string, format: uuid, example: b1111111-0000-0000-0000-000000000001 }
+                source_channel: { type: string, enum: [bot, miniapp], default: miniapp }
       responses:
-        '201':
-          description: Бронь создана
+        "201":
+          description: Запись создана
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Booking'
-        '401':
-          description: Отсутствует или некорректен X-MAX-User-ID
+              schema: { $ref: "#/components/schemas/BookingView" }
+        "200":
+          description: Пользователь уже записан — возвращается существующая запись
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '409':
-          description: Квота на слот исчерпана
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
+              schema: { $ref: "#/components/schemas/BookingView" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /api/v1/bookings/{id}:
+    get:
+      tags: [bookings]
+      summary: Запись пользователя (экран QR-пропуска)
+      security: [{ initData: [] }, { testUser: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Запись
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookingView" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
       tags: [bookings]
-      summary: Отменить бронь
-      parameters:
-        - $ref: '#/components/parameters/BookingId'
-        - $ref: '#/components/parameters/MaxUserIdHeaderRequired'
+      summary: Отменить запись; место уходит первому из листа ожидания
+      security: [{ initData: [] }, { testUser: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
       responses:
-        '204':
-          description: Бронь отменена
-        '401':
-          description: Отсутствует или некорректен X-MAX-User-ID
-        '404':
-          $ref: '#/components/responses/NotFound'
+        "204": { description: Запись отменена }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/bookings/{id}/cancel:
+    post:
+      tags: [bookings]
+      summary: То же, что DELETE /bookings/{id}
+      security: [{ initData: [] }, { testUser: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Запись отменена }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /api/v1/bookings/{id}/reschedule:
     patch:
       tags: [bookings]
-      summary: Перенести бронь на другой слот
-      parameters:
-        - $ref: '#/components/parameters/BookingId'
-        - $ref: '#/components/parameters/MaxUserIdHeaderRequired'
+      summary: Перенести запись на другое занятие (код входа сохраняется)
+      security: [{ initData: [] }, { testUser: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
       requestBody:
         required: true
         content:
@@ -121,137 +270,274 @@ paths:
               type: object
               required: [new_slot_id]
               properties:
-                new_slot_id:
-                  type: string
-                  format: uuid
+                new_slot_id: { type: string, format: uuid, example: b1111111-0000-0000-0000-000000000002 }
       responses:
-        '200':
-          description: Бронь перенесена
+        "200":
+          description: Запись перенесена
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Booking'
-        '401':
-          description: Отсутствует или некорректен X-MAX-User-ID
-        '409':
-          description: Квота на новый слот исчерпана
-        '404':
-          $ref: '#/components/responses/NotFound'
+              schema: { $ref: "#/components/schemas/BookingView" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/bookings/{id}/feedback:
+    post:
+      tags: [bookings]
+      summary: Оценка занятия после отметки посещения
+      security: [{ initData: [] }, { testUser: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating]
+              properties:
+                rating: { type: integer, minimum: 1, maximum: 5 }
+      responses:
+        "204": { description: Оценка сохранена }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /api/v1/bookings/user/{user_id}:
     get:
       tags: [bookings]
-      summary: Список броней пользователя
+      summary: Все записи пользователя по внутреннему id (только свои)
+      security: [{ initData: [] }, { testUser: [] }]
       parameters:
-        - name: user_id
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
-        - $ref: '#/components/parameters/MaxUserIdHeaderRequired'
+        - { name: user_id, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
-        '200':
-          description: Список броней
+        "200":
+          description: Список записей
           content:
             application/json:
               schema:
                 type: array
-                items:
-                  $ref: '#/components/schemas/Booking'
-  /api/v1/health:
-    get:
-      tags: [system]
-      summary: Health-check сервиса
+                items: { $ref: "#/components/schemas/Booking" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/waitlist:
+    post:
+      tags: [bookings]
+      summary: Встать в лист ожидания на заполненное занятие
+      security: [{ initData: [] }, { testUser: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slot_id]
+              properties:
+                slot_id: { type: string, format: uuid }
       responses:
-        '200':
-          description: Сервис работает
+        "201":
+          description: Позиция в очереди
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  status: { type: string, example: ok }
+                  position: { type: integer, example: 1 }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/partner/login:
+    post:
+      tags: [partner]
+      summary: Вход в кабинет студии по коду (не больше 10 попыток в минуту с IP)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        "200":
+          description: Токен сессии на 12 часов
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  expires_at: { type: string, format: date-time }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { description: Слишком много попыток }
+  /api/v1/partner/bookings:
+    get:
+      tags: [partner]
+      summary: Записи в студии-партнёры на ближайшую неделю
+      security: [{ partner: [] }]
+      responses:
+        "200":
+          description: Записи с именами клиентов
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bookings:
+                    type: array
+                    items: { $ref: "#/components/schemas/BookingView" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/partner/checkin:
+    post:
+      tags: [partner]
+      summary: Отметить посещение по QR (SPORTSLOT:123456) или шестизначному коду
+      security: [{ partner: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, example: "SPORTSLOT:545296" }
+      responses:
+        "200":
+          description: Посещение отмечено, клиенту уходит вопрос «Как прошло?»
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookingView" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Посещение по этому коду уже отмечено }
+  /api/v1/partner/bookings/{id}/remind:
+    post:
+      tags: [partner]
+      summary: Отправить клиенту напоминание сейчас (для демонстрации, только демо-партнёры)
+      security: [{ partner: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Напоминание отправлено }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /bot/webhook:
+    post:
+      tags: [system]
+      summary: Приём обновлений MAX (bot_started, message_created, message_callback)
+      parameters:
+        - { name: X-Max-Bot-Api-Secret, in: header, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200": { description: Обновление принято }
+        "401": { description: Неверный секрет }
 components:
+  securitySchemes:
+    initData:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: "tma <initData> — подписанные данные запуска мини-приложения MAX"
+    testUser:
+      type: apiKey
+      in: header
+      name: X-MAX-User-ID
+      description: Только тестовые учётные записи (например, max-test-user-001)
+    partner:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: "Partner <token> — токен из POST /api/v1/partner/login"
   parameters:
-    VenueId:
+    Id:
       name: id
       in: path
       required: true
       schema: { type: string, format: uuid }
-    BookingId:
-      name: id
-      in: path
-      required: true
-      schema: { type: string, format: uuid }
-    MaxUserIdHeader:
-      name: X-MAX-User-ID
-      in: header
-      required: false
-      description: >
-        Идентификатор пользователя MAX (для персонализации поиска,
-        необязателен для /search).
-      schema: { type: string }
-    MaxUserIdHeaderRequired:
-      name: X-MAX-User-ID
-      in: header
-      required: true
-      description: >
-        Идентификатор пользователя MAX, передаваемый мини-приложением
-        (упрощённая авторизация MVP вместо верификации initData).
-      schema: { type: string }
   responses:
     BadRequest:
-      description: Некорректные параметры запроса
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
+      description: Некорректный запрос
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Unauthorized:
+      description: Нет авторизации или подпись MAX не прошла проверку
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Forbidden:
+      description: Запись принадлежит другому пользователю
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
     NotFound:
-      description: Ресурс не найден
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
+      description: Не найдено
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Conflict:
+      description: "Конфликт: quota_exceeded, slot_started, not_active, already_booked"
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
   schemas:
-    SearchRequest:
+    Error:
       type: object
-      required: [sport_type, lat, lon]
+      required: [error, code]
       properties:
-        sport_type: { type: string, example: boxing }
-        lat: { type: number, format: double, example: 55.751244 }
-        lon: { type: number, format: double, example: 37.618423 }
-        radius_km: { type: number, default: 15 }
-        date_from:
-          type: string
-          format: date
-          example: "2026-09-29"
-          description: Начало диапазона дат поиска (по умолчанию — сегодня)
-        date_to:
-          type: string
-          format: date
-          example: "2026-10-30"
-          description: Конец диапазона дат поиска
-        time_from:
-          type: string
-          example: "18:00"
-          description: Фильтр по времени суток (часы:минуты), применяется ко всем датам диапазона
-        time_to:
-          type: string
-          example: "21:00"
-        level:
-          type: string
-          enum: [beginner, intermediate, advanced]
-    SearchResponse:
+        error: { type: string }
+        code: { type: string, example: quota_exceeded }
+    SportId:
+      type: string
+      enum: [swimming, yoga, boxing, fitness, dance, team, tennis, athletics, multi]
+    Meta:
+      type: object
+      required: [data_source, generated_at]
+      properties:
+        data_source: { type: string, example: osm+demo_partners }
+        catalog_date: { type: string, format: date-time }
+        generated_at: { type: string, format: date-time }
+    Venue:
       type: object
       properties:
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/VenueSlot'
-        meta:
-          type: object
+        id: { type: string, format: uuid }
+        external_id: { type: string, example: "osm:way/123456" }
+        name: { type: string }
+        sport_type: { $ref: "#/components/schemas/SportId" }
+        sports: { type: array, items: { $ref: "#/components/schemas/SportId" } }
+        address: { type: string }
+        district: { type: string, example: voroshilovsky }
+        lat: { type: number }
+        lon: { type: number }
+        source: { type: string, enum: [osm, demo_partner] }
+        source_url: { type: string }
+        booking_mode: { type: string, enum: [instant, external] }
+        phone: { type: string }
+        website: { type: string }
+        opening_hours: { type: string, example: "Mo-Fr 07:00-22:00" }
+        description: { type: string }
+        what_to_bring: { type: string }
+        trial_price: { type: integer, nullable: true, description: "Рубли; 0 — бесплатно" }
+        verified_at: { type: string, format: date-time }
+    SlotInfo:
+      type: object
+      properties:
+        slot_id: { type: string, format: uuid }
+        title: { type: string, example: Бокс для новичков }
+        sport_type: { $ref: "#/components/schemas/SportId" }
+        start_at: { type: string, format: date-time }
+        end_at: { type: string, format: date-time }
+        quota_total: { type: integer }
+        quota_available: { type: integer }
+    VenueCard:
+      type: object
+      properties:
+        venue: { $ref: "#/components/schemas/Venue" }
+        distance_km: { type: number }
+        slots: { type: array, items: { $ref: "#/components/schemas/SlotInfo" } }
+        available_slots: { type: integer }
+    VenueDetails:
+      allOf:
+        - $ref: "#/components/schemas/Venue"
+        - type: object
+          required: [venue_id, name, address, all_slots]
           properties:
-            data_source: { type: string, example: test-data }
-            generated_at: { type: string, format: date-time }
-    VenueSlot:
+            venue_id: { type: string, format: uuid }
+            all_slots: { type: array, items: { $ref: "#/components/schemas/SlotInfo" } }
+    SlotResult:
       type: object
       properties:
         venue_id: { type: string, format: uuid }
@@ -259,48 +545,63 @@ components:
         sport_type: { type: string }
         level: { type: string }
         address: { type: string }
-        slot:
-          type: object
-          properties:
-            slot_id: { type: string, format: uuid }
-            start_at: { type: string, format: date-time, example: "2026-09-29T19:00:00+03:00" }
-            end_at: { type: string, format: date-time, example: "2026-09-29T20:00:00+03:00" }
-            quota_available: { type: integer }
-        source_ref: { type: string, example: test-data }
-    VenueDetails:
-      allOf:
-        - $ref: '#/components/schemas/VenueSlot'
-        - type: object
-          properties:
-            all_slots:
-              type: array
-              items:
-                type: object
-                properties:
-                  slot_id: { type: string, format: uuid }
-                  start_at: { type: string, format: date-time }
-                  end_at: { type: string, format: date-time }
-                  quota_available: { type: integer }
-    BookingCreateRequest:
-      type: object
-      required: [slot_id, source_channel]
-      properties:
-        slot_id: { type: string, format: uuid }
-        source_channel: { type: string, enum: [bot, miniapp] }
-      description: >
-        user_id не передаётся в теле — резолвится backend'ом
-        из заголовка X-MAX-User-ID.
+        district: { type: string }
+        lat: { type: number }
+        lon: { type: number }
+        source: { type: string }
+        source_ref: { type: string }
+        slot: { $ref: "#/components/schemas/SlotInfo" }
     Booking:
       type: object
+      required: [id, slot_id, status, source_channel]
       properties:
         id: { type: string, format: uuid }
         user_id: { type: string, format: uuid }
         slot_id: { type: string, format: uuid }
-        status: { type: string, enum: [confirmed, cancelled] }
+        status: { type: string, enum: [confirmed, cancelled, attended, no_show] }
         source_channel: { type: string, enum: [bot, miniapp] }
+        checkin_code: { type: string, example: "545296" }
+        reminder_sent: { type: boolean }
+        rating: { type: integer, nullable: true }
         created_at: { type: string, format: date-time }
-    ErrorResponse:
+        cancelled_at: { type: string, format: date-time, nullable: true }
+        attended_at: { type: string, format: date-time, nullable: true }
+    BookingView:
+      allOf:
+        - $ref: "#/components/schemas/Booking"
+        - type: object
+          properties:
+            user_name: { type: string }
+            slot:
+              type: object
+              properties:
+                id: { type: string, format: uuid }
+                venue_id: { type: string, format: uuid }
+                title: { type: string }
+                sport_type: { type: string }
+                start_at: { type: string, format: date-time }
+                end_at: { type: string, format: date-time }
+                quota_total: { type: integer }
+                quota_booked: { type: integer }
+            venue: { $ref: "#/components/schemas/Venue" }
+    QuizResult:
       type: object
       properties:
-        error: { type: string }
-        code: { type: string }
+        sport: { $ref: "#/components/schemas/SportId" }
+        title: { type: string }
+        score: { type: integer }
+        reason: { type: string, example: Любишь воду и хочешь больше энергии. }
+    Catalog:
+      type: object
+      properties:
+        sports: { type: array, items: { type: object } }
+        districts: { type: array, items: { type: object } }
+        whens: { type: array, items: { type: object } }
+        quiz: { type: array, items: { type: object } }
+        data_sources:
+          type: object
+          properties:
+            catalog: { type: string }
+            catalog_date: { type: string, format: date-time }
+            demo_partners: { type: boolean }
+            partner_enabled: { type: boolean }

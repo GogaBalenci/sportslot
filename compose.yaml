@@ -47,7 +47,7 @@ services:
       dockerfile: web/mini-app/Dockerfile
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
-        VITE_DEV_MAX_USER_ID: ${VITE_DEV_MAX_USER_ID:-}
+        VITE_DEV_MAX_USER_ID: ${VITE_DEV_MAX_USER_ID:-max-test-user-001}
     depends_on:
       api:
         condition: service_started
