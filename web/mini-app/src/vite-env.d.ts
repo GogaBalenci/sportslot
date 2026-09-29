@@ -23,7 +23,7 @@ interface MaxHapticFeedback {
 }
 
 interface MaxWebApp {
-  initDataUnsafe?: { user?: MaxWebAppUser }
+  initDataUnsafe?: { user?: MaxWebAppUser; start_param?: string }
   colorScheme?: 'light' | 'dark'
   themeParams?: MaxThemeParams
   HapticFeedback?: MaxHapticFeedback

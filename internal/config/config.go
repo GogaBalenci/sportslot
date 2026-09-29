@@ -14,6 +14,13 @@ type Config struct {
 	MaxBotAPIBaseURL string
 	MaxBotAPIToken   string
 	MaxWebhookSecret string
+	// MaxWebhookURL — публичный HTTPS-адрес webhook (https://<домен>/bot/webhook).
+	// Если задан вместе с токеном, API регистрирует подписку при старте.
+	MaxWebhookURL string
+	// MiniAppButton: "link" (по умолчанию) — обычная ссылка на мини-приложение;
+	// "open_app" — открытие внутри MAX, работает только если URL мини-приложения
+	// привязан к боту в кабинете платформы MAX для партнёров.
+	MiniAppButton    string
 	CORSOrigins      []string
 	MiniAppURL       string
 	NotifierInterval time.Duration
@@ -24,9 +31,11 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		HTTPPort:         getEnv("HTTP_PORT", "8080"),
 		DatabaseURL:      os.Getenv("DATABASE_URL"),
-		MaxBotAPIBaseURL: getEnv("MAX_BOT_API_BASE_URL", "https://botapi.max.ru"),
+		MaxBotAPIBaseURL: getEnv("MAX_BOT_API_BASE_URL", "https://platform-api2.max.ru"),
 		MaxBotAPIToken:   os.Getenv("MAX_BOT_API_TOKEN"),
 		MaxWebhookSecret: os.Getenv("MAX_WEBHOOK_SECRET"),
+		MaxWebhookURL:    os.Getenv("MAX_WEBHOOK_URL"),
+		MiniAppButton:    getEnv("MINI_APP_BUTTON", "link"),
 		CORSOrigins:      splitList(getEnv("CORS_ORIGINS", "http://localhost:5173")),
 		MiniAppURL:       os.Getenv("MINI_APP_URL"),
 		SeedDataPath:     getEnv("SEED_DATA_PATH", "seed-data/venues.json"),

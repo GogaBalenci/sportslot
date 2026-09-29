@@ -36,6 +36,9 @@ type DialogResponse struct {
 	Text        string
 	Buttons     []maxclient.MessageButton
 	MiniAppLink string
+	// MiniAppPayload передаётся в мини-приложение через кнопку open_app
+	// (доступен в WebApp.initDataUnsafe.start_param).
+	MiniAppPayload string
 }
 
 // DialogService - машина состояний диалога чат-бота: выбор спорта ->
@@ -192,6 +195,7 @@ func (d *DialogService) showResults(ctx context.Context, maxUserID string, state
 		params.Set("sport", state.SportType)
 		params.Set("user", maxUserID)
 		resp.MiniAppLink = d.miniAppURL + "?" + params.Encode()
+		resp.MiniAppPayload = "sport_" + state.SportType
 	}
 
 	return resp, nil

@@ -299,9 +299,12 @@ docker compose up --build -d
 | `DATABASE_URL` | строка подключения к БД | `postgresql://sportslot:...@db:5432/sportslot?sslmode=disable` |
 | `VITE_API_BASE_URL` | URL API, доступный браузеру | `http://localhost:8080` |
 | `MINI_APP_URL` | URL mini-app для deep link бота | `http://localhost:5173` |
-| `MAX_BOT_API_BASE_URL` | базовый URL MAX Bot API | `https://botapi.max.ru` |
+| `MAX_BOT_API_BASE_URL` | базовый URL MAX Bot API | `https://platform-api2.max.ru` |
 | `MAX_BOT_API_TOKEN` | токен бота, выданный организаторами | `""` (пустой для локального демо) |
-| `MAX_WEBHOOK_SECRET` | секрет проверки входящих webhook-запросов | `dev_webhook_secret` |
+| `MAX_WEBHOOK_SECRET` | секрет webhook, MAX присылает его в `X-Max-Bot-Api-Secret` | `dev_webhook_secret` |
+| `MAX_WEBHOOK_URL` | публичный HTTPS-адрес webhook; если задан, подписка создаётся при старте | `""` |
+| `DOMAIN` | домен для `compose.prod.yaml` (Caddy + Let's Encrypt) | — |
+| `MINI_APP_BUTTON` | `link` — ссылка на мини-приложение, `open_app` — открытие внутри MAX (нужна привязка в кабинете) | `link` |
 | `CORS_ORIGINS` | разрешённые origin mini-app | `http://localhost:5173` |
 | `NOTIFIER_INTERVAL_SECONDS` | интервал проверки напоминаний | `120` |
 | `VITE_DEMO_MAX_USER_ID` | тестовый ID для запуска вне MAX | `max-test-user-001` |
@@ -314,7 +317,7 @@ docker compose up --build -d
 
 `seed-data/venues.json` — воспроизводимый набор из четырёх московских площадок (бокс, йога, футбол) со слотами, охватывающими период с конца сентября по ноябрь 2026 года. Структура полей опирается на Всероссийский реестр объектов спорта Минспорта России. При первом старте API загружает файл только в пустую БД.
 
-Внешняя интеграция — MAX Bot API. Входящий вебхук проверяет заголовок `X-Webhook-Secret`. Bridge загружается с `https://st.max.ru/js/max-web-app.js`.
+Внешняя интеграция — MAX Bot API (`platform-api2.max.ru`). Входящий вебхук проверяет заголовок `X-Max-Bot-Api-Secret`. Bridge загружается с `https://st.max.ru/js/max-web-app.js`.
 
 ---
 
@@ -386,6 +389,37 @@ curl -s -i -X DELETE http://localhost:8080/api/v1/bookings/<BOOKING_ID> \
 Решение содержит формальные спецификации в папке `openapi/`:
 - **`openapi/openapi.yaml`** — спецификация OpenAPI 3.0.3, описывающая все эндпоинты (`/search`, `/venues/{id}`, `/bookings`, `/reschedule`, `/health`), схемы запросов/ответов и коды ошибок.
 - **`openapi/DATA-API.yaml`** — файл по регламенту хакатона (9 обязательных пунктов), используемый автоматизированной платформой оценки для валидации сценариев.
+
+---
+
+## Деплой бота в MAX (сервер с доменом)
+
+MAX доставляет webhook **только по HTTPS на порт 443** с сертификатом доверенного центра (самоподписанные не принимаются). Для этого в репозитории есть продакшен-надстройка `compose.prod.yaml`: Caddy автоматически получает сертификат Let's Encrypt и раздаёт с одного домена Go API (`/bot/webhook`, `/api/*`) и мини-приложение (`/`).
+
+**Требования:** Linux-сервер с Docker Compose v2, свободные порты 80 и 443, домен с A-записью на IP сервера.
+
+```bash
+git clone https://github.com/GogaBalenci/sportslot && cd sportslot
+cp deploy/env.prod.example .env      # заполнить DOMAIN, POSTGRES_PASSWORD, MAX_WEBHOOK_SECRET, MAX_BOT_API_TOKEN
+docker compose -f compose.yaml -f compose.prod.yaml up -d --build
+docker compose -f compose.yaml -f compose.prod.yaml logs -f api
+```
+
+При старте API проверяет токен (`GET /me`) и сам регистрирует webhook `https://$DOMAIN/bot/webhook` (`POST /subscriptions`). В логах должно быть `MAX bot: @<username>` и `MAX webhook subscribed`. Проверка и ручное управление подпиской:
+
+```bash
+./deploy/max-webhook.sh me          # токен валиден?
+./deploy/max-webhook.sh list        # активные подписки
+./deploy/max-webhook.sh subscribe   # переподписать вручную
+```
+
+**Мини-приложение.** Для работы бота достаточно токена: webhook, сообщения и команды настраиваются через API. Привязать мини-приложение к боту можно только в кабинете платформы MAX для партнёров. Поэтому кнопка «Сравнить в приложении» работает в двух режимах (`MINI_APP_BUTTON`):
+- `link` (по умолчанию) — ссылка `https://$DOMAIN/?sport=…&user=…`, работает с одним токеном;
+- `open_app` — открытие внутри MAX с передачей вида спорта в `start_param`; включается после того, как владелец бота привяжет `https://$DOMAIN/` в кабинете. Если MAX отклонит кнопку, результаты отправляются без неё — сценарий полностью проходится в чате.
+
+**Интеграция с MAX Bot API** (сверено с dev.max.ru/docs-api): базовый адрес `https://platform-api2.max.ru`, авторизация заголовком `Authorization: <token>`, отправка `POST /messages?user_id=…` с вложением `inline_keyboard`, подтверждение нажатий `POST /answers?callback_id=…`, секрет webhook в заголовке `X-Max-Bot-Api-Secret`. Обрабатываются события `bot_started`, `message_created`, `message_callback`; на любые события API отвечает `200`, чтобы MAX не отписал бота из-за повторных ошибок доставки. Образ API включает корневой сертификат НУЦ Минцифры, которого требует `platform-api2.max.ru`.
+
+Остановка: `docker compose -f compose.yaml -f compose.prod.yaml down` (данные БД и сертификаты сохраняются в томах).
 
 ---
 

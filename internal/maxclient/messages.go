@@ -8,6 +8,7 @@ const (
 	MsgBookingConfirmed = "Бронь подтверждена! Увидимся на тренировке. Я пришлю напоминание за час до начала."
 	MsgQuotaExceeded    = "Ой, это место только что заняли. Вот другие варианты:"
 	MsgUnknownChoice    = "Выбери один из предложенных вариантов кнопкой."
+	MsgInternalError    = "Что-то пошло не так. Напиши /start, чтобы начать заново."
 )
 
 func SportTypeButtons() []MessageButton {

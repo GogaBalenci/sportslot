@@ -19,6 +19,7 @@ type Dependencies struct {
 	MaxClient     *maxclient.Client
 	CORSOrigins   []string
 	WebhookSecret string
+	MiniAppButton string
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -39,7 +40,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	healthH := NewHealthHandler()
 	searchH := NewSearchHandler(deps.Matching)
 	bookingH := NewBookingHandler(deps.Booking)
-	botH := NewBotWebhookHandler(deps.Dialog, deps.MaxClient, deps.WebhookSecret)
+	botH := NewBotWebhookHandler(deps.Dialog, deps.MaxClient, deps.WebhookSecret, deps.MiniAppButton == "open_app")
 
 	r.Get("/health", healthH.Health)
 	r.Get("/api/v1/health", healthH.Health)
