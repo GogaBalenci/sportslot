@@ -1,13 +1,19 @@
 import { useEffect, useState } from 'react'
-import { Button, Typography } from '@maxhub/max-ui'
+import { ChevronRight, MapPin, Store } from 'lucide-react'
 import { ApiError, api, type Booking } from '../api'
-import { ErrorBlock, Loader } from '../components'
-import { code, dayTitle, time } from '../format'
+import { Btn, Empty, ErrorBlock, Loader } from '../components'
+import { code, dayNumber, dayTitle, time, until } from '../format'
+
+// when — «07:30 · через 6 ч» или просто «завтра, 1 октября в 20:30».
+function when(iso: string): string {
+  const rel = until(iso)
+  return rel.startsWith('через') ? `${time(iso)} · ${rel}` : rel
+}
 import { useNav } from '../nav'
 
 const statusText: Record<Booking['status'], string> = {
-  confirmed: 'Записаны',
-  attended: 'Посещение отмечено',
+  confirmed: 'Активна',
+  attended: 'Посещено',
   no_show: 'Пропущено',
   cancelled: 'Отменено',
 }
@@ -32,42 +38,53 @@ export function MyScreen() {
 
   return (
     <div className="screen">
-      <header className="screen__header">
-        <Typography.Headline variant="medium">Мои занятия</Typography.Headline>
+      <header className="hero">
+        <h1 className="h1">Мои занятия</h1>
       </header>
-      {error && (error.auth
-        ? <div className="empty">Записи доступны, когда приложение открыто в MAX.</div>
-        : <ErrorBlock text={error.text} onRetry={load} />)}
+      {error && (error.auth ? <Empty title="Открой приложение в MAX" text="Записи привязаны к твоему аккаунту MAX." /> : <ErrorBlock text={error.text} onRetry={load} />)}
       {!error && !items && <Loader />}
       {items && upcoming.length === 0 && (
-        <div className="empty">
-          <div>Предстоящих занятий нет.</div>
-          <Button onClick={() => nav.tab({ name: 'search' })}>Найти тренировку</Button>
+        <Empty
+          title="В расписании пока пусто"
+          text="Самое время размяться — пробное занятие ждёт."
+          action={<Btn onClick={() => nav.tab({ name: 'search' })}>Найти тренировку</Btn>}
+        />
+      )}
+      {upcoming.map((b) => {
+        const d = dayNumber(b.slot.start_at)
+        return (
+          <article key={b.id} className="booking" onClick={() => nav.push({ name: 'ticket', id: b.id })}>
+            <div className="booking__date">
+              <span className="booking__day">{d.day}</span>
+              <span>{d.month}</span>
+              <span>{d.weekday}</span>
+            </div>
+            <div className="booking__body">
+              <div className="booking__when">{when(b.slot.start_at)}</div>
+              <div className="booking__title">{b.slot.title}</div>
+              <div className="meta"><MapPin size={13} /><span>{b.venue.name}</span></div>
+              <span className="badge badge--mint">Код {code(b.checkin_code)}</span>
+            </div>
+            <ChevronRight className="booking__chevron" size={20} />
+          </article>
+        )
+      })}
+      {past.length > 0 && <h2 className="h2 section">История</h2>}
+      {past.length > 0 && (
+        <div className="list">
+          {past.map((b) => (
+            <button key={b.id} className="list__row" onClick={() => nav.push({ name: 'ticket', id: b.id })}>
+              <div>
+                <div className="list__title">{b.slot.title}</div>
+                <div className="muted small">{dayTitle(b.slot.start_at)} · {b.venue.name}</div>
+              </div>
+              <span className={`status status--${b.status}`}>{statusText[b.status]}{b.rating ? ` · ${b.rating}/5` : ''}</span>
+            </button>
+          ))}
         </div>
       )}
-      {upcoming.map((b) => (
-        <article key={b.id} className="card" onClick={() => nav.push({ name: 'ticket', id: b.id })}>
-          <div className="card__head">
-            <Typography.Title variant="small-strong">{b.slot.title}</Typography.Title>
-            <span className="badge badge--partner">Код {code(b.checkin_code)}</span>
-          </div>
-          <div><b>{dayTitle(b.slot.start_at)}, {time(b.slot.start_at)}</b></div>
-          <div className="muted">{b.venue.name}, {b.venue.address}</div>
-          <div className="link">Открыть QR-пропуск</div>
-        </article>
-      ))}
-      {past.length > 0 && <h3 className="section">История</h3>}
-      {past.map((b) => (
-        <div key={b.id} className="history-row" onClick={() => nav.push({ name: 'ticket', id: b.id })}>
-          <div>
-            <div>{b.slot.title}</div>
-            <div className="muted small">{dayTitle(b.slot.start_at)} · {b.venue.name}</div>
-          </div>
-          <span className="muted small">{statusText[b.status]}{b.rating ? ` · ${b.rating}/5` : ''}</span>
-        </div>
-      ))}
-      <button className="text-button" onClick={() => nav.push({ name: 'partner' })}>
-        Я администратор студии
+      <button className="link-row" onClick={() => nav.push({ name: 'partner' })}>
+        <Store size={18} /> Я администратор студии
       </button>
     </div>
   )

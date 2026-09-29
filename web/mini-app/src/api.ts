@@ -100,7 +100,7 @@ async function request<T>(method: string, path: string, body?: unknown, headers:
   if (res.status === 204) return undefined as T
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
-    throw new ApiError(res.status, data.code ?? 'error', data.error ?? 'Что-то пошло не так, попробуйте ещё раз')
+    throw new ApiError(res.status, data.code ?? 'error', data.error ?? 'Что-то пошло не так, попробуй ещё раз')
   }
   return data as T
 }

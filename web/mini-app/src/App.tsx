@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { CalendarCheck, ChevronLeft, Search, Sparkles } from 'lucide-react'
 import { api, type Catalog } from './api'
-import { setBackButton, startParam } from './max'
+import { insideMax, setBackButton, startParam } from './max'
 import { NavContext, routeFromStart, type Nav, type Route } from './nav'
 import { MyScreen } from './screens/MyScreen'
 import { PartnerScreen } from './screens/PartnerScreen'
@@ -9,10 +10,10 @@ import { SearchScreen } from './screens/SearchScreen'
 import { TicketScreen } from './screens/TicketScreen'
 import { VenueScreen } from './screens/VenueScreen'
 
-const tabs: { route: Route; title: string }[] = [
-  { route: { name: 'search' }, title: 'Поиск' },
-  { route: { name: 'quiz' }, title: 'Подбор' },
-  { route: { name: 'my' }, title: 'Мои занятия' },
+const tabs: { route: Route; title: string; icon: typeof Search }[] = [
+  { route: { name: 'search' }, title: 'Поиск', icon: Search },
+  { route: { name: 'quiz' }, title: 'Подбор', icon: Sparkles },
+  { route: { name: 'my' }, title: 'Мои занятия', icon: CalendarCheck },
 ]
 
 function initialStack(): Route[] {
@@ -81,9 +82,9 @@ export default function App() {
   return (
     <NavContext.Provider value={nav}>
       <main className="app">
-        {stack.length > 1 && (
+        {stack.length > 1 && !insideMax() && (
           <button className="back" onClick={back}>
-            ← Назад
+            <ChevronLeft size={20} /> Назад
           </button>
         )}
         {screen}
@@ -93,7 +94,8 @@ export default function App() {
         <nav className="tabbar">
           {tabs.map((t) => (
             <button key={t.title} className={root === t.route.name ? 'active' : ''} onClick={() => nav.tab(t.route)}>
-              {t.title}
+              <t.icon size={22} strokeWidth={root === t.route.name ? 2.4 : 2} />
+              <span>{t.title}</span>
             </button>
           ))}
         </nav>

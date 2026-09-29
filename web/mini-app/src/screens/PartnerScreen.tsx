@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react'
-import { Button, Input, Typography } from '@maxhub/max-ui'
+import { Bell, LogOut, ScanLine } from 'lucide-react'
 import { ApiError, api, hasPartnerToken, setPartnerToken, type Booking } from '../api'
-import { ErrorBlock, Loader } from '../components'
+import { Btn, Empty, ErrorBlock, Loader } from '../components'
 import { dayKey, dayTitle, time } from '../format'
 import { canScanQR, haptic, scanQR } from '../max'
 import { useNav } from '../nav'
 
 const status: Record<Booking['status'], string> = {
-  confirmed: 'ждём',
-  attended: 'пришёл',
-  no_show: 'не пришёл',
-  cancelled: 'отменил',
+  confirmed: 'Ждём',
+  attended: 'Пришёл',
+  no_show: 'Не пришёл',
+  cancelled: 'Отменил',
 }
 
 function Login({ onDone }: { onDone: () => void }) {
@@ -32,13 +32,13 @@ function Login({ onDone }: { onDone: () => void }) {
   }
   return (
     <div className="screen">
-      <header className="screen__header">
-        <Typography.Headline variant="medium">Кабинет студии</Typography.Headline>
-        <div className="muted">Отмечайте посещения по QR и смотрите, кто записан. В пилоте кабинет открыт для демо-партнёров.</div>
+      <header className="hero">
+        <h1 className="h1">Кабинет студии</h1>
+        <p className="muted">Отмечайте посещения по QR и смотрите, кто записан на неделю.</p>
       </header>
-      <Input placeholder="Код доступа" value={codeValue} onChange={(e) => setCode(e.target.value)} />
+      <input className="input" placeholder="Код доступа" value={codeValue} onChange={(e) => setCode(e.target.value)} />
       {error && <div className="error">{error}</div>}
-      <Button size="large" stretched loading={busy} disabled={!codeValue.trim()} onClick={submit}>Войти</Button>
+      <Btn size="lg" block loading={busy} disabled={!codeValue.trim()} onClick={submit}>Войти</Btn>
     </div>
   )
 }
@@ -77,7 +77,7 @@ export function PartnerScreen() {
     try {
       const b = await api.partnerCheckIn(raw)
       haptic('success')
-      setResult({ ok: true, text: `Отмечено: ${b.user_name || 'гость'} — ${b.slot.title}, ${dayTitle(b.slot.start_at).toLowerCase()} в ${time(b.slot.start_at)}. Клиенту ушёл вопрос «Как прошло?».` })
+      setResult({ ok: true, text: `${b.user_name || 'Гость'} отмечен: ${b.slot.title}, ${dayTitle(b.slot.start_at).toLowerCase()} в ${time(b.slot.start_at)}. Клиенту ушёл вопрос «Как прошло?».` })
       setManual('')
       load()
     } catch (e) {
@@ -116,38 +116,36 @@ export function PartnerScreen() {
 
   return (
     <div className="screen">
-      <header className="screen__header">
-        <Typography.Headline variant="medium">Кабинет студии</Typography.Headline>
-        <div className="muted">Демо-партнёры СпортСлота</div>
+      <header className="hero">
+        <h1 className="h1">Кабинет студии</h1>
+        <p className="muted">Отметка посещений и записи на неделю</p>
       </header>
 
-      <div className="stack">
-        {canScanQR() && <Button size="large" stretched loading={busy} onClick={scan}>Сканировать QR-пропуск</Button>}
-        <div className="filters">
-          <Input placeholder="Код из 6 цифр" inputMode="numeric" value={manual} onChange={(e) => setManual(e.target.value)} />
-          <Button variant="secondary" loading={busy} disabled={manual.replace(/\D/g, '').length !== 6} onClick={() => checkIn(manual)}>
-            Отметить
-          </Button>
+      <section className="checkin">
+        {canScanQR() && <Btn size="lg" block loading={busy} icon={<ScanLine size={20} />} onClick={scan}>Сканировать QR-пропуск</Btn>}
+        <div className="row">
+          <input className="input" placeholder="Код из 6 цифр" inputMode="numeric" value={manual} onChange={(e) => setManual(e.target.value)} />
+          <Btn variant="secondary" loading={busy} disabled={manual.replace(/\D/g, '').length !== 6} onClick={() => checkIn(manual)}>Отметить</Btn>
         </div>
-        {result && <div className={result.ok ? 'notice notice--success' : 'error'}>{result.text}</div>}
-      </div>
+        {result && <div className={result.ok ? 'success success--compact' : 'error'}>{result.text}</div>}
+      </section>
 
       {error && <ErrorBlock text={error} onRetry={load} />}
       {!error && !items && <Loader />}
-      {items && items.length === 0 && <div className="empty">На ближайшую неделю записей нет.</div>}
+      {items && items.length === 0 && <Empty title="На ближайшую неделю записей нет" />}
       {groups.map((g) => (
         <section key={g.key}>
-          <h3 className="section">{g.title}</h3>
+          <h2 className="h2 section">{g.title}</h2>
           <div className="list">
             {g.items.map((b) => (
-              <div key={b.id} className="partner-row">
-                <b>{time(b.slot.start_at)}</b>
-                <div className="partner-row__main">
-                  <div>{b.user_name || 'Гость'} · {b.slot.title}</div>
-                  <div className="muted small">{b.venue.name}</div>
+              <div key={b.id} className="list__row list__row--static">
+                <b className="list__time">{time(b.slot.start_at)}</b>
+                <div className="list__main">
+                  <div className="list__title">{b.user_name || 'Гость'}</div>
+                  <div className="muted small">{b.slot.title} · {b.venue.name}</div>
                 </div>
                 {b.status === 'confirmed' ? (
-                  <button className="text-button small" onClick={() => remind(b.id)}>Напомнить</button>
+                  <Btn variant="secondary" icon={<Bell size={16} />} onClick={() => remind(b.id)}>Напомнить</Btn>
                 ) : (
                   <span className={`status status--${b.status}`}>{status[b.status]}</span>
                 )}
@@ -156,7 +154,7 @@ export function PartnerScreen() {
           </div>
         </section>
       ))}
-      <button className="text-button" onClick={() => { setPartnerToken(''); setLogged(false) }}>Выйти</button>
+      <Btn variant="ghost" block icon={<LogOut size={18} />} onClick={() => { setPartnerToken(''); setLogged(false) }}>Выйти</Btn>
     </div>
   )
 }

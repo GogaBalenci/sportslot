@@ -68,3 +68,28 @@ export function catalogDate(iso?: string): string {
   const p = parts(iso)
   return `${String(p.d).padStart(2, '0')}.${String(p.m).padStart(2, '0')}.${p.y}`
 }
+
+export function dayNumber(iso: string): { weekday: string; day: number; month: string } {
+  const p = parts(iso)
+  return { weekday: weekdays[p.wd], day: p.d, month: months[p.m - 1].slice(0, 3) }
+}
+
+// until — «через 40 мин», «через 3 ч 10 мин» или «завтра в 19:00».
+export function until(iso: string): string {
+  const minutes = Math.round((new Date(iso).getTime() - Date.now()) / 60000)
+  if (minutes <= 0) return 'уже началась'
+  if (minutes < 60) return `через ${minutes} мин`
+  if (minutes < 12 * 60) {
+    const m = minutes % 60
+    return `через ${Math.floor(minutes / 60)} ч${m ? ` ${m} мин` : ''}`
+  }
+  return `${dayTitle(iso).toLowerCase()} в ${time(iso)}`
+}
+
+// nextDays — ключи и даты на count дней вперёд, начиная с сегодня.
+export function nextDays(count: number): { key: string; iso: string }[] {
+  return Array.from({ length: count }, (_, i) => {
+    const iso = new Date(Date.now() + i * 864e5).toISOString()
+    return { key: dayKey(iso), iso }
+  })
+}

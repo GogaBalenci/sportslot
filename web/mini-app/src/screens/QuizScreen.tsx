@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Button, Typography } from '@maxhub/max-ui'
+import { ArrowRight, Sparkles } from 'lucide-react'
 import { api, type QuizResult } from '../api'
+import { Btn } from '../components'
 import { haptic } from '../max'
 import { useNav } from '../nav'
 
@@ -37,42 +38,47 @@ export function QuizScreen() {
   if (results) {
     return (
       <div className="screen">
-        <header className="screen__header">
-          <Typography.Headline variant="medium">Вам может подойти</Typography.Headline>
-          <div className="muted">Начните с пробного занятия — это ни к чему не обязывает.</div>
+        <header className="hero">
+          <span className="badge badge--orange"><Sparkles size={12} /> Подбор готов</span>
+          <h1 className="h1">Тебе может подойти</h1>
+          <p className="muted">Начни с пробного занятия — это ни к чему не обязывает.</p>
         </header>
         {results.map((r, i) => (
-          <article key={r.sport} className={`card${i === 0 ? ' card--top' : ''}`}>
-            <Typography.Title variant="small-strong">{i + 1}. {r.title}</Typography.Title>
-            <div className="muted">{r.reason}</div>
-            <Button variant={i === 0 ? 'primary' : 'secondary'} onClick={() => nav.tab({ name: 'search', sport: r.sport })}>
-              Найти занятия
-            </Button>
+          <article key={r.sport} className={`result${i === 0 ? ' result--top' : ''}`}>
+            <div className="result__rank">{i + 1}</div>
+            <div className="result__body">
+              <h3 className="card__title">{r.title}</h3>
+              <p className="muted">{r.reason}</p>
+              <Btn variant={i === 0 ? 'primary' : 'secondary'} icon={<ArrowRight size={18} />} onClick={() => nav.tab({ name: 'search', sport: r.sport })}>
+                Найти занятия
+              </Btn>
+            </div>
           </article>
         ))}
-        <button className="text-button" onClick={restart}>Пройти заново</button>
+        <Btn variant="ghost" block onClick={restart}>Пройти заново</Btn>
       </div>
     )
   }
 
   const q = questions[step]
-  if (!q) return <div className="screen"><div className="center muted">Загружаем вопросы…</div></div>
+  if (!q) return <div className="screen"><div className="loader">Загружаем вопросы…</div></div>
   return (
     <div className="screen">
-      <header className="screen__header">
-        <div className="muted">Вопрос {step + 1} из {questions.length}</div>
+      <header className="hero">
+        <div className="quiz-step">Вопрос {step + 1} из {questions.length}</div>
         <div className="progress"><i style={{ width: `${((step + 1) / questions.length) * 100}%` }} /></div>
-        <Typography.Headline variant="medium">{q.title}</Typography.Headline>
+        <h1 className="h1">{q.title}</h1>
       </header>
       <div className="stack">
         {q.options.map((o) => (
-          <Button key={o.id} size="large" variant={answers[q.id] === o.id ? 'primary' : 'secondary'} stretched onClick={() => answer(q.id, o.id)}>
-            {o.title}
-          </Button>
+          <button key={o.id} className={`option${answers[q.id] === o.id ? ' option--active' : ''}`} onClick={() => answer(q.id, o.id)}>
+            <span>{o.title}</span>
+            <ArrowRight size={18} />
+          </button>
         ))}
       </div>
       {error && <div className="error">{error}</div>}
-      {step > 0 && <button className="text-button" onClick={() => setStep(step - 1)}>Назад</button>}
+      {step > 0 && <Btn variant="ghost" block onClick={() => setStep(step - 1)}>Назад</Btn>}
     </div>
   )
 }

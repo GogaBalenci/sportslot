@@ -3,6 +3,7 @@
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL?: string
   readonly VITE_DEV_MAX_USER_ID?: string
+  readonly VITE_YANDEX_MAPS_API_KEY?: string
 }
 
 interface MaxWebAppUser {
@@ -39,4 +40,5 @@ interface MaxWebApp {
 
 interface Window {
   WebApp?: MaxWebApp
+  ymaps?: any
 }

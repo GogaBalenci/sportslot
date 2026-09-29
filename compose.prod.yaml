@@ -21,6 +21,7 @@ services:
         # Пустое значение = запросы к API с того же домена (без CORS).
         VITE_API_BASE_URL: ""
         VITE_DEV_MAX_USER_ID: ""
+        VITE_YANDEX_MAPS_API_KEY: ${VITE_YANDEX_MAPS_API_KEY:-}
     restart: unless-stopped
 
   db:

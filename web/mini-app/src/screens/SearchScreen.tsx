@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Typography } from '@maxhub/max-ui'
-import { api, type SlotInfo, type Venue, type VenueCard } from '../api'
-import { BookingSheet, Chips, ErrorBlock, Loader, VenueCardView } from '../components'
-import { catalogDate } from '../format'
+import { List, Map as MapIcon, Navigation } from 'lucide-react'
+import { api, type Booking, type SlotInfo, type Venue, type VenueCard } from '../api'
+import { BookingSheet, Btn, Chips, Empty, ErrorBlock, Loader, Logo, NextWorkout, VenueCardView } from '../components'
 import { MapView } from '../MapView'
+import { userFirstName } from '../max'
 import { useNav } from '../nav'
 
 type Point = { lat: number; lon: number }
@@ -20,6 +20,19 @@ export function SearchScreen({ initialSport }: { initialSport?: string }) {
   const [error, setError] = useState('')
   const [picked, setPicked] = useState<{ venue: Venue; slot: SlotInfo } | null>(null)
   const [locating, setLocating] = useState(false)
+  const [next, setNext] = useState<Booking | null>(null)
+
+  useEffect(() => {
+    api
+      .me()
+      .then((r) => {
+        const upcoming = r.bookings
+          .filter((b) => b.status === 'confirmed' && new Date(b.slot.end_at).getTime() > Date.now())
+          .sort((a, b) => a.slot.start_at.localeCompare(b.slot.start_at))
+        setNext(upcoming[0] ?? null)
+      })
+      .catch(() => setNext(null))
+  }, [])
 
   const load = useCallback(() => {
     setCards(null)
@@ -34,7 +47,7 @@ export function SearchScreen({ initialSport }: { initialSport?: string }) {
 
   function locate() {
     if (!navigator.geolocation) {
-      nav.toast('Геолокация недоступна — выберите район')
+      nav.toast('Геолокация недоступна — выбери район')
       return
     }
     setLocating(true)
@@ -46,28 +59,32 @@ export function SearchScreen({ initialSport }: { initialSport?: string }) {
       },
       () => {
         setLocating(false)
-        nav.toast('Не удалось определить местоположение — выберите район')
+        nav.toast('Не удалось определить местоположение — выбери район')
       },
       { timeout: 8000, maximumAge: 300000 },
     )
   }
 
-  const sports = [{ id: '', title: 'Все' }, ...(catalog?.sports.filter((s) => s.id !== 'multi').map((s) => ({ id: s.id, title: s.short })) ?? [])]
+  const sports = [{ id: '', title: 'Все' }, ...(catalog?.sports.filter((s) => s.id !== 'multi').map((s) => ({ id: s.id, title: s.title })) ?? [])]
   const bookable = cards?.filter((c) => c.venue.booking_mode === 'instant') ?? []
-  const external = cards?.filter((c) => c.venue.booking_mode !== 'instant') ?? []
+  const other = cards?.filter((c) => c.venue.booking_mode !== 'instant') ?? []
   const onSelect = useCallback((id: string) => nav.push({ name: 'venue', id }), [nav])
+  const name = userFirstName()
 
   return (
     <div className="screen">
-      <header className="screen__header">
-        <Typography.Headline variant="medium">Тренировки в Ростове</Typography.Headline>
-        <div className="muted">Пробное занятие рядом с домом — запись в пару касаний</div>
+      <header className="hero">
+        <Logo />
+        <h1 className="h1">{name ? `${name}, найдём тренировку рядом?` : 'Найдём тренировку рядом?'}</h1>
+        <p className="muted">Пробное занятие в Ростове — запись в пару касаний</p>
       </header>
 
-      <Chips items={sports} value={sport} onChange={setSport} />
-      <Chips items={catalog?.whens ?? []} value={when} onChange={setWhen} />
+      {next && <NextWorkout booking={next} />}
 
-      <div className="filters">
+      <Chips items={sports} value={sport} onChange={setSport} />
+      <Chips items={catalog?.whens ?? []} value={when} onChange={setWhen} tone="navy" />
+
+      <div className="row">
         <select
           className="select"
           value={me ? 'geo' : district}
@@ -79,19 +96,15 @@ export function SearchScreen({ initialSport }: { initialSport?: string }) {
           <option value="">Весь город</option>
           {me && <option value="geo">Рядом со мной</option>}
           {catalog?.districts.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.title} район
-            </option>
+            <option key={d.id} value={d.id}>{d.title} район</option>
           ))}
         </select>
-        <Button variant="secondary" size="medium" loading={locating} onClick={locate}>
-          Рядом со мной
-        </Button>
+        <Btn variant="secondary" loading={locating} icon={<Navigation size={18} />} onClick={locate}>Рядом</Btn>
       </div>
 
       <div className="segmented">
-        <button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')}>Список</button>
-        <button className={view === 'map' ? 'active' : ''} onClick={() => setView('map')}>Карта</button>
+        <button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')}><List size={16} /> Список</button>
+        <button className={view === 'map' ? 'active' : ''} onClick={() => setView('map')}><MapIcon size={16} /> Карта</button>
       </div>
 
       {error && <ErrorBlock text={error} onRetry={load} />}
@@ -101,8 +114,8 @@ export function SearchScreen({ initialSport }: { initialSport?: string }) {
         <>
           <MapView cards={cards} me={me} onSelect={onSelect} />
           <div className="legend">
-            <span><i className="dot dot--accent" /> онлайн-запись</span>
-            <span><i className="dot" /> каталог OpenStreetMap</span>
+            <span><i className="dot dot--orange" /> онлайн-запись</span>
+            <span><i className="dot" /> запись в зале</span>
           </div>
         </>
       )}
@@ -110,28 +123,22 @@ export function SearchScreen({ initialSport }: { initialSport?: string }) {
       {cards && view === 'list' && (
         <>
           {cards.length === 0 && (
-            <div className="empty">
-              <div>Ничего не нашлось. Попробуйте другое время или весь город.</div>
-              <Button variant="secondary" onClick={() => { setWhen('any'); setDistrict(''); setMe(undefined) }}>
-                Сбросить фильтры
-              </Button>
-            </div>
+            <Empty
+              title="Здесь пока пусто"
+              text="Попробуй другое время или весь город."
+              action={<Btn variant="secondary" onClick={() => { setWhen('any'); setDistrict(''); setMe(undefined) }}>Сбросить фильтры</Btn>}
+            />
           )}
-          {bookable.length > 0 && <h3 className="section">Записаться онлайн</h3>}
+          {bookable.length > 0 && <h2 className="h2 section">Запишись онлайн</h2>}
           {bookable.map((c) => (
-            <VenueCardView key={c.venue.id} card={c} onSlot={(venue, slot) => setPicked({ venue, slot })} />
+            <VenueCardView key={c.venue.id} card={c} sport={sport} onSlot={(venue, slot) => setPicked({ venue, slot })} />
           ))}
-          {external.length > 0 && <h3 className="section">Залы из открытого каталога</h3>}
-          {external.slice(0, 30).map((c) => (
-            <VenueCardView key={c.venue.id} card={c} onSlot={() => undefined} />
+          {other.length > 0 && <h2 className="h2 section">Ещё залы рядом</h2>}
+          {other.slice(0, 30).map((c) => (
+            <VenueCardView key={c.venue.id} card={c} sport={sport} onSlot={() => undefined} />
           ))}
         </>
       )}
-
-      <footer className="sources">
-        Каталог залов: © участники OpenStreetMap, выгрузка {catalogDate(catalog?.data_sources.catalog_date)}.
-        {catalog?.data_sources.demo_partners && ' Студии с онлайн-записью — демо-партнёры с модельным расписанием.'}
-      </footer>
 
       {picked && <BookingSheet venue={picked.venue} slot={picked.slot} onClose={() => setPicked(null)} />}
     </div>
