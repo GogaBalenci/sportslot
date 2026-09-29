@@ -1,0 +1,1248 @@
+{
+  "source": "OpenStreetMap",
+  "license": "ODbL 1.0, © участники OpenStreetMap",
+  "exported_at": "2026-09-29T19:48:21Z",
+  "venues": [
+    {
+      "external_id": "osm:node/10135288468",
+      "name": "Спортивный тир \"Динамо\"",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2387997,
+      "lon": 39.7183729,
+      "address": "",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/node/10135288468"
+    },
+    {
+      "external_id": "osm:node/10576466538",
+      "name": "Muscule Fit",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2526806,
+      "lon": 39.7649154,
+      "address": "",
+      "district": "pervomaysky",
+      "phone": "+7 918 5560604",
+      "opening_hours": "Mo-Fr 07:00-23:00; Sa-Su 10:00-20:00",
+      "source_url": "https://www.openstreetmap.org/node/10576466538"
+    },
+    {
+      "external_id": "osm:node/10576466539",
+      "name": "Центр йоги",
+      "sports": [
+        "yoga"
+      ],
+      "lat": 47.2337594,
+      "lon": 39.7154286,
+      "address": "",
+      "district": "kirovsky",
+      "phone": "+7 904 3474420",
+      "opening_hours": "Fr 18:00-19:30; Sa 10:00-11:30; Tu 19:30-21:00",
+      "source_url": "https://www.openstreetmap.org/node/10576466539"
+    },
+    {
+      "external_id": "osm:node/10650564098",
+      "name": "Oxygen",
+      "sports": [
+        "dance"
+      ],
+      "lat": 47.289953,
+      "lon": 39.7086508,
+      "address": "",
+      "district": "voroshilovsky",
+      "phone": "+7 938 105-10-10",
+      "source_url": "https://www.openstreetmap.org/node/10650564098"
+    },
+    {
+      "external_id": "osm:node/10655405639",
+      "name": "Ddx",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2250476,
+      "lon": 39.7047052,
+      "address": "",
+      "district": "leninsky",
+      "phone": "+7 863 3100515",
+      "website": "https://www.ddxfitness.ru/clubs/ddx-rostov-na-donu/",
+      "opening_hours": "Mo-Su 06:00-00:00",
+      "source_url": "https://www.openstreetmap.org/node/10655405639"
+    },
+    {
+      "external_id": "osm:node/10798898705",
+      "name": "Дон пауер",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2296883,
+      "lon": 39.7098119,
+      "address": "",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/node/10798898705"
+    },
+    {
+      "external_id": "osm:node/11414656535",
+      "name": "DDX",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2893236,
+      "lon": 39.7131301,
+      "address": "",
+      "district": "voroshilovsky",
+      "phone": "+7 495 2555000",
+      "website": "https://www.ddxfitness.ru/clubs/ddx-rostov-na-donu-galereya-park",
+      "opening_hours": "Mo-Su 06:00-00:00",
+      "source_url": "https://www.openstreetmap.org/node/11414656535"
+    },
+    {
+      "external_id": "osm:node/11622376484",
+      "name": "Lady Stretch",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2547648,
+      "lon": 39.7710148,
+      "address": "",
+      "district": "pervomaysky",
+      "phone": "+7 905 4309130",
+      "website": "https://ladystretch.com/rostov2",
+      "opening_hours": "Mo-Su 09:00-14:00,16:00-21:00",
+      "source_url": "https://www.openstreetmap.org/node/11622376484"
+    },
+    {
+      "external_id": "osm:node/11622376486",
+      "name": "Lady Stretch",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2963363,
+      "lon": 39.7137265,
+      "address": "",
+      "district": "voroshilovsky",
+      "phone": "+7 989 5362239;+7 989 6161583",
+      "website": "https://ladystretch.com/rostov-na-dony",
+      "opening_hours": "Mo-Su 09:00-14:00,16:00-21:00",
+      "source_url": "https://www.openstreetmap.org/node/11622376486"
+    },
+    {
+      "external_id": "osm:node/1180421384",
+      "name": "Техас",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2270747,
+      "lon": 39.6300065,
+      "address": "улица Зорге, 60 кВ",
+      "district": "sovetsky",
+      "website": "https://www.texasgym.ru/",
+      "source_url": "https://www.openstreetmap.org/node/1180421384"
+    },
+    {
+      "external_id": "osm:node/12378227223",
+      "name": "Lady Stretch",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2089574,
+      "lon": 39.6313194,
+      "address": "",
+      "district": "zheleznodorozhny",
+      "phone": "+7 960 4595545",
+      "website": "https://ladystretch.com/rostov-na-dony",
+      "opening_hours": "Mo-Su 09:00-14:00,16:00-21:00",
+      "source_url": "https://www.openstreetmap.org/node/12378227223"
+    },
+    {
+      "external_id": "osm:node/12806023197",
+      "name": "Тренажёрный зал",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2012103,
+      "lon": 39.7369604,
+      "address": "",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/node/12806023197"
+    },
+    {
+      "external_id": "osm:node/13174345943",
+      "name": "jet gym",
+      "sports": [
+        "yoga",
+        "fitness"
+      ],
+      "lat": 47.2240205,
+      "lon": 39.7240472,
+      "address": "проспект Чехова, 50",
+      "district": "kirovsky",
+      "phone": "+78632098972",
+      "website": "https://jetgym.ru/chehov",
+      "opening_hours": "Mo-Fr 07:00-24:00",
+      "source_url": "https://www.openstreetmap.org/node/13174345943"
+    },
+    {
+      "external_id": "osm:node/13267757361",
+      "name": "МетроFitness",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2945394,
+      "lon": 39.7092515,
+      "address": "",
+      "district": "voroshilovsky",
+      "phone": "+7 863 2228202",
+      "website": "https://rostov-na-dony.metrofitness.ru",
+      "opening_hours": "24/7",
+      "source_url": "https://www.openstreetmap.org/node/13267757361"
+    },
+    {
+      "external_id": "osm:node/1327225089",
+      "name": "Фитнес-фрэнд",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2210617,
+      "lon": 39.6309968,
+      "address": "",
+      "district": "sovetsky",
+      "website": "www.fitnes-frend.ru",
+      "source_url": "https://www.openstreetmap.org/node/1327225089"
+    },
+    {
+      "external_id": "osm:node/13283173823",
+      "name": "Страйк",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2572749,
+      "lon": 39.7142338,
+      "address": "",
+      "district": "oktyabrsky",
+      "phone": "+7 988 5480128",
+      "website": "https://vk.com/strikernd",
+      "opening_hours": "Mo-Su 10:00-20:00; We off; Th off",
+      "source_url": "https://www.openstreetmap.org/node/13283173823"
+    },
+    {
+      "external_id": "osm:node/13794926503",
+      "name": "Федерация Пэйнтбола Ростовской Облаcти",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.1988391,
+      "lon": 39.7309814,
+      "address": "",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/node/13794926503"
+    },
+    {
+      "external_id": "osm:node/1759578123",
+      "name": "Alex Fitness",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2240404,
+      "lon": 39.724031,
+      "address": "",
+      "district": "kirovsky",
+      "phone": "+7 (863) 300 00 09",
+      "website": "https://rostov.alexfitness.ru/chehova",
+      "source_url": "https://www.openstreetmap.org/node/1759578123"
+    },
+    {
+      "external_id": "osm:node/1821612639",
+      "name": "Бассейн РГУПС",
+      "sports": [
+        "swimming"
+      ],
+      "lat": 47.2513223,
+      "lon": 39.7058468,
+      "address": "",
+      "district": "oktyabrsky",
+      "source_url": "https://www.openstreetmap.org/node/1821612639"
+    },
+    {
+      "external_id": "osm:node/1821612911",
+      "name": "Спортзал РГУПС",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2510666,
+      "lon": 39.7059586,
+      "address": "",
+      "district": "oktyabrsky",
+      "source_url": "https://www.openstreetmap.org/node/1821612911"
+    },
+    {
+      "external_id": "osm:node/1821612938",
+      "name": "WorldClass",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2532004,
+      "lon": 39.7077503,
+      "address": "",
+      "district": "oktyabrsky",
+      "source_url": "https://www.openstreetmap.org/node/1821612938"
+    },
+    {
+      "external_id": "osm:node/1825896153",
+      "name": "Тренажёрный зал",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2610738,
+      "lon": 39.7153655,
+      "address": "",
+      "district": "voroshilovsky",
+      "opening_hours": "Mo-Sa 10:00-21:00",
+      "source_url": "https://www.openstreetmap.org/node/1825896153"
+    },
+    {
+      "external_id": "osm:node/2271269458",
+      "name": "Арбат-фитнес",
+      "sports": [
+        "fitness",
+        "athletics"
+      ],
+      "lat": 47.2209218,
+      "lon": 39.7541143,
+      "address": "1-я линия, 74",
+      "district": "proletarsky",
+      "website": "arbat-fitness.ru",
+      "source_url": "https://www.openstreetmap.org/node/2271269458"
+    },
+    {
+      "external_id": "osm:node/2342286881",
+      "name": "Дружба",
+      "sports": [
+        "team"
+      ],
+      "lat": 47.2770099,
+      "lon": 39.7124712,
+      "address": "",
+      "district": "voroshilovsky",
+      "source_url": "https://www.openstreetmap.org/node/2342286881"
+    },
+    {
+      "external_id": "osm:node/2550358716",
+      "name": "Boogaloo",
+      "sports": [
+        "dance"
+      ],
+      "lat": 47.2194748,
+      "lon": 39.685423,
+      "address": "",
+      "district": "leninsky",
+      "phone": "+7 (918) 5548727; +7(903) 4011837; +7(903) 4010123",
+      "website": "https://vk.com/club552885",
+      "source_url": "https://www.openstreetmap.org/node/2550358716"
+    },
+    {
+      "external_id": "osm:node/3213960390",
+      "name": "Спортивный клуб «Физика»",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2969356,
+      "lon": 39.7221536,
+      "address": "",
+      "district": "voroshilovsky",
+      "source_url": "https://www.openstreetmap.org/node/3213960390"
+    },
+    {
+      "external_id": "osm:node/3739297525",
+      "name": "Я это я",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.203645,
+      "lon": 39.634744,
+      "address": "",
+      "district": "zheleznodorozhny",
+      "source_url": "https://www.openstreetmap.org/node/3739297525"
+    },
+    {
+      "external_id": "osm:node/3782157666",
+      "name": "Спортивная площадка",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2300832,
+      "lon": 39.6571873,
+      "address": "",
+      "district": "zheleznodorozhny",
+      "source_url": "https://www.openstreetmap.org/node/3782157666"
+    },
+    {
+      "external_id": "osm:node/4033132657",
+      "name": "Турник+Брусья",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2812562,
+      "lon": 39.755322,
+      "address": "",
+      "district": "pervomaysky",
+      "source_url": "https://www.openstreetmap.org/node/4033132657"
+    },
+    {
+      "external_id": "osm:node/4166132490",
+      "name": "Саванна",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2290737,
+      "lon": 39.618702,
+      "address": "",
+      "district": "sovetsky",
+      "source_url": "https://www.openstreetmap.org/node/4166132490"
+    },
+    {
+      "external_id": "osm:node/4438725389",
+      "name": "Областной Дом Физической Культуры",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2265798,
+      "lon": 39.7367734,
+      "address": "",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/node/4438725389"
+    },
+    {
+      "external_id": "osm:node/4633305513",
+      "name": "WorldClassFitness",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2321943,
+      "lon": 39.7309787,
+      "address": "",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/node/4633305513"
+    },
+    {
+      "external_id": "osm:node/4643722521",
+      "name": "Бассейн \"Универ\"",
+      "sports": [
+        "swimming"
+      ],
+      "lat": 47.2387532,
+      "lon": 39.7109466,
+      "address": "",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/node/4643722521"
+    },
+    {
+      "external_id": "osm:node/4706592007",
+      "name": "Плавательно-бассейновый комплекс Кривоноса",
+      "sports": [
+        "swimming"
+      ],
+      "lat": 47.2620229,
+      "lon": 39.6459859,
+      "address": "",
+      "district": "oktyabrsky",
+      "phone": "+7 (863) 277‒49‒49",
+      "source_url": "https://www.openstreetmap.org/node/4706592007"
+    },
+    {
+      "external_id": "osm:node/4790157525",
+      "name": "Физкульт",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2268608,
+      "lon": 39.7138373,
+      "address": "",
+      "district": "kirovsky",
+      "opening_hours": "Mo-Fr 07:00-23:00; Sa-Su 09:00-23:00",
+      "source_url": "https://www.openstreetmap.org/node/4790157525"
+    },
+    {
+      "external_id": "osm:node/5037131228",
+      "name": "БК \"ПРИНЦИП\" бойцовский клуб",
+      "sports": [
+        "boxing",
+        "fitness"
+      ],
+      "lat": 47.2303932,
+      "lon": 39.7372257,
+      "address": "",
+      "district": "kirovsky",
+      "phone": "29 61 0 61",
+      "website": "https://www.fcprinciple.ru/",
+      "opening_hours": "Mo, We, Fr 11:00-22:00; Tu, Th, Sa 11:00-22:00",
+      "source_url": "https://www.openstreetmap.org/node/5037131228"
+    },
+    {
+      "external_id": "osm:node/5039809384",
+      "name": "Тренажёрный зал",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.256662,
+      "lon": 39.6431961,
+      "address": "",
+      "district": "sovetsky",
+      "source_url": "https://www.openstreetmap.org/node/5039809384"
+    },
+    {
+      "external_id": "osm:node/5089785893",
+      "name": "Антарес",
+      "sports": [
+        "boxing"
+      ],
+      "lat": 47.2646248,
+      "lon": 39.6536714,
+      "address": "",
+      "district": "oktyabrsky",
+      "phone": "+7-918-558-79-85",
+      "website": "https://aikido-antares.ru/",
+      "source_url": "https://www.openstreetmap.org/node/5089785893"
+    },
+    {
+      "external_id": "osm:node/5221350816",
+      "name": "Олимп-Северный",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2936619,
+      "lon": 39.7129287,
+      "address": "",
+      "district": "voroshilovsky",
+      "website": "http://nord.olympclubs.ru/",
+      "source_url": "https://www.openstreetmap.org/node/5221350816"
+    },
+    {
+      "external_id": "osm:node/5292079882",
+      "name": "Рим-атлетик",
+      "sports": [
+        "fitness",
+        "athletics"
+      ],
+      "lat": 47.1996802,
+      "lon": 39.6300875,
+      "address": "",
+      "district": "zheleznodorozhny",
+      "source_url": "https://www.openstreetmap.org/node/5292079882"
+    },
+    {
+      "external_id": "osm:node/5296002658",
+      "name": "BandaFit",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.215439,
+      "lon": 39.6185982,
+      "address": "",
+      "district": "sovetsky",
+      "source_url": "https://www.openstreetmap.org/node/5296002658"
+    },
+    {
+      "external_id": "osm:node/5303183393",
+      "name": "Brooklyn boxing club",
+      "sports": [
+        "boxing",
+        "fitness"
+      ],
+      "lat": 47.1988587,
+      "lon": 39.6261942,
+      "address": "",
+      "district": "zheleznodorozhny",
+      "source_url": "https://www.openstreetmap.org/node/5303183393"
+    },
+    {
+      "external_id": "osm:node/5303426940",
+      "name": "West Dojo",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2277407,
+      "lon": 39.6338131,
+      "address": "",
+      "district": "sovetsky",
+      "source_url": "https://www.openstreetmap.org/node/5303426940"
+    },
+    {
+      "external_id": "osm:node/5409341401",
+      "name": "РусТТ",
+      "sports": [
+        "tennis"
+      ],
+      "lat": 47.2268718,
+      "lon": 39.7018071,
+      "address": "",
+      "district": "leninsky",
+      "source_url": "https://www.openstreetmap.org/node/5409341401"
+    },
+    {
+      "external_id": "osm:node/5425242238",
+      "name": "Добро",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.3369078,
+      "lon": 39.7368461,
+      "address": "",
+      "district": "voroshilovsky",
+      "source_url": "https://www.openstreetmap.org/node/5425242238"
+    },
+    {
+      "external_id": "osm:node/667386809",
+      "name": "Теннисный клуб",
+      "sports": [
+        "tennis"
+      ],
+      "lat": 47.2783181,
+      "lon": 39.7221058,
+      "address": "",
+      "district": "voroshilovsky",
+      "source_url": "https://www.openstreetmap.org/node/667386809"
+    },
+    {
+      "external_id": "osm:node/7141574064",
+      "name": "Аквацентр \"Флиппер\"",
+      "sports": [
+        "swimming"
+      ],
+      "lat": 47.2006798,
+      "lon": 39.6468486,
+      "address": "бульвар Платова, 20",
+      "district": "zheleznodorozhny",
+      "phone": "+79381101418",
+      "source_url": "https://www.openstreetmap.org/node/7141574064"
+    },
+    {
+      "external_id": "osm:node/763143657",
+      "name": "клуб туристов и альпинистов \"Планета\"",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.245704,
+      "lon": 39.7576465,
+      "address": "",
+      "district": "proletarsky",
+      "source_url": "https://www.openstreetmap.org/node/763143657"
+    },
+    {
+      "external_id": "osm:node/7687080485",
+      "name": "Alex Fitness",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2371005,
+      "lon": 39.5958209,
+      "address": "",
+      "district": "sovetsky",
+      "opening_hours": "Mo-Fr 07:00-24:00; Sa,Su 09:00-22:00",
+      "source_url": "https://www.openstreetmap.org/node/7687080485"
+    },
+    {
+      "external_id": "osm:node/7737529083",
+      "name": "Танцевальное Пространство JDI",
+      "sports": [
+        "dance"
+      ],
+      "lat": 47.2297243,
+      "lon": 39.6222658,
+      "address": "",
+      "district": "sovetsky",
+      "source_url": "https://www.openstreetmap.org/node/7737529083"
+    },
+    {
+      "external_id": "osm:node/7966539458",
+      "name": "X-Fit",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2086451,
+      "lon": 39.6239856,
+      "address": "Коммунистический проспект, 36",
+      "district": "zheleznodorozhny",
+      "phone": "+7 863 3202142",
+      "website": "https://rostovnadonu.xfit.ru/",
+      "opening_hours": "Mo-Fr 07:00-00:00; Sa-Su 08:00-23:00",
+      "source_url": "https://www.openstreetmap.org/node/7966539458"
+    },
+    {
+      "external_id": "osm:relation/1977420",
+      "name": "World Class",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2532834,
+      "lon": 39.7075827,
+      "address": "Ростовская обл., г. Ростов-на-Дону, ул. Герасименко, 5",
+      "district": "oktyabrsky",
+      "website": "https://www.worldclass-rostov.ru/",
+      "source_url": "https://www.openstreetmap.org/relation/1977420"
+    },
+    {
+      "external_id": "osm:relation/1991345",
+      "name": "Труд",
+      "sports": [
+        "athletics"
+      ],
+      "lat": 47.2432146,
+      "lon": 39.6990171,
+      "address": "Ростовская обл., г. Ростов-на-Дону, ул. Фрунзе, 4",
+      "district": "oktyabrsky",
+      "source_url": "https://www.openstreetmap.org/relation/1991345"
+    },
+    {
+      "external_id": "osm:relation/2030593",
+      "name": "Дом физической культуры",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2267138,
+      "lon": 39.7367413,
+      "address": "обл. Ростовская, г. Ростов-на-Дону,, ул. Большая Садовая, 127б",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/relation/2030593"
+    },
+    {
+      "external_id": "osm:relation/2048316",
+      "name": "КСК Экспресс",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2266461,
+      "lon": 39.7487497,
+      "address": "улица Закруткина, 67А",
+      "district": "proletarsky",
+      "source_url": "https://www.openstreetmap.org/relation/2048316"
+    },
+    {
+      "external_id": "osm:relation/2122184",
+      "name": "Стрелково-стендовый комплекс ВОО СКВО",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.3037097,
+      "lon": 39.710243,
+      "address": "Ростовская обл., р-н Аксайский, п. Верхнетемерницкий, ул. Темерницкая,  5",
+      "district": "voroshilovsky",
+      "source_url": "https://www.openstreetmap.org/relation/2122184"
+    },
+    {
+      "external_id": "osm:way/1011473983",
+      "name": "Большое футбольное поле",
+      "sports": [
+        "team"
+      ],
+      "lat": 47.1978088,
+      "lon": 39.7319388,
+      "address": "",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/way/1011473983"
+    },
+    {
+      "external_id": "osm:way/105033986",
+      "name": "Поля для волейбола",
+      "sports": [
+        "team"
+      ],
+      "lat": 47.2033969,
+      "lon": 39.7311223,
+      "address": "",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/way/105033986"
+    },
+    {
+      "external_id": "osm:way/116546058",
+      "name": "СК Геркулес",
+      "sports": [
+        "athletics"
+      ],
+      "lat": 47.2423381,
+      "lon": 39.7554698,
+      "address": "проспект Шолохова, 29В",
+      "district": "proletarsky",
+      "source_url": "https://www.openstreetmap.org/way/116546058"
+    },
+    {
+      "external_id": "osm:way/129413601",
+      "name": "Олимпик",
+      "sports": [
+        "tennis"
+      ],
+      "lat": 47.2458747,
+      "lon": 39.7584808,
+      "address": "улица 1-й Конной Армии, 4Б",
+      "district": "proletarsky",
+      "source_url": "https://www.openstreetmap.org/way/129413601"
+    },
+    {
+      "external_id": "osm:way/131307659",
+      "name": "Конюшня",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2385248,
+      "lon": 39.6563797,
+      "address": "",
+      "district": "zheleznodorozhny",
+      "source_url": "https://www.openstreetmap.org/way/131307659"
+    },
+    {
+      "external_id": "osm:way/135646949",
+      "name": "Олимпия Men",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2217469,
+      "lon": 39.7090468,
+      "address": "",
+      "district": "kirovsky",
+      "opening_hours": "06:30-23:30",
+      "source_url": "https://www.openstreetmap.org/way/135646949"
+    },
+    {
+      "external_id": "osm:way/137831707",
+      "name": "Ростов Арена",
+      "sports": [
+        "team"
+      ],
+      "lat": 47.2093153,
+      "lon": 39.7381277,
+      "address": "",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/way/137831707"
+    },
+    {
+      "external_id": "osm:way/1383726287",
+      "name": "Поля для тенниса и баскетбола",
+      "sports": [
+        "team",
+        "tennis"
+      ],
+      "lat": 47.2024711,
+      "lon": 39.7304135,
+      "address": "",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/way/1383726287"
+    },
+    {
+      "external_id": "osm:way/1386641960",
+      "name": "Площадка для BMX и скейтборда",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.1892156,
+      "lon": 39.7366647,
+      "address": "",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/way/1386641960"
+    },
+    {
+      "external_id": "osm:way/1386663392",
+      "name": "Площадка ВПП и ГТО",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.1977834,
+      "lon": 39.7325749,
+      "address": "",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/way/1386663392"
+    },
+    {
+      "external_id": "osm:way/147060960",
+      "name": "Легко-атлетический манеж ДГТУ",
+      "sports": [
+        "athletics"
+      ],
+      "lat": 47.241022,
+      "lon": 39.7092871,
+      "address": "Ростовская обл., г. Ростов-на-Дону, ул. Юфимцева, 16",
+      "district": "oktyabrsky",
+      "source_url": "https://www.openstreetmap.org/way/147060960"
+    },
+    {
+      "external_id": "osm:way/157296996",
+      "name": "СпортСити",
+      "sports": [
+        "athletics"
+      ],
+      "lat": 47.2892468,
+      "lon": 39.7092055,
+      "address": "Ростовская обл., г. Ростов-на-Дону, б-р Комарова, 28-е",
+      "district": "voroshilovsky",
+      "source_url": "https://www.openstreetmap.org/way/157296996"
+    },
+    {
+      "external_id": "osm:way/161782842",
+      "name": "OLYMP",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2727098,
+      "lon": 39.7573647,
+      "address": "Ростовская обл., г. Ростов-на-Дону, ул. Киргизская, 9/3",
+      "district": "pervomaysky",
+      "phone": "255-00-00",
+      "website": "rnd.olympclubs.ru",
+      "source_url": "https://www.openstreetmap.org/way/161782842"
+    },
+    {
+      "external_id": "osm:way/163562026",
+      "name": "Поле для минифутбола",
+      "sports": [
+        "team"
+      ],
+      "lat": 47.2037384,
+      "lon": 39.7307914,
+      "address": "",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/way/163562026"
+    },
+    {
+      "external_id": "osm:way/166543540",
+      "name": "Малое футбольное поле",
+      "sports": [
+        "team"
+      ],
+      "lat": 47.1984918,
+      "lon": 39.7314266,
+      "address": "",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/way/166543540"
+    },
+    {
+      "external_id": "osm:way/24798531",
+      "name": "Волна",
+      "sports": [
+        "swimming"
+      ],
+      "lat": 47.2372721,
+      "lon": 39.7151796,
+      "address": "улица Текучёва, 149",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/way/24798531"
+    },
+    {
+      "external_id": "osm:way/258707706",
+      "name": "Gentleman Fight Club",
+      "sports": [
+        "boxing"
+      ],
+      "lat": 47.2343429,
+      "lon": 39.6400872,
+      "address": "улица Ерёменко, 1А",
+      "district": "sovetsky",
+      "source_url": "https://www.openstreetmap.org/way/258707706"
+    },
+    {
+      "external_id": "osm:way/292612745",
+      "name": "Поле для волейбола",
+      "sports": [
+        "team"
+      ],
+      "lat": 47.2010767,
+      "lon": 39.7306914,
+      "address": "",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/way/292612745"
+    },
+    {
+      "external_id": "osm:way/295201175",
+      "name": "Олимп 2",
+      "sports": [
+        "team"
+      ],
+      "lat": 47.2432082,
+      "lon": 39.7608933,
+      "address": "",
+      "district": "proletarsky",
+      "source_url": "https://www.openstreetmap.org/way/295201175"
+    },
+    {
+      "external_id": "osm:way/296834084",
+      "name": "Теннисный корт",
+      "sports": [
+        "tennis"
+      ],
+      "lat": 47.2057086,
+      "lon": 39.7649561,
+      "address": "",
+      "district": "proletarsky",
+      "source_url": "https://www.openstreetmap.org/way/296834084"
+    },
+    {
+      "external_id": "osm:way/315665155",
+      "name": "Ice Arena",
+      "sports": [
+        "team"
+      ],
+      "lat": 47.2087231,
+      "lon": 39.6273272,
+      "address": "Коммунистический проспект, 36 к4",
+      "district": "zheleznodorozhny",
+      "source_url": "https://www.openstreetmap.org/way/315665155"
+    },
+    {
+      "external_id": "osm:way/359284859",
+      "name": "Стадион им. Шаумяна",
+      "sports": [
+        "team"
+      ],
+      "lat": 47.283384,
+      "lon": 39.4744798,
+      "address": "",
+      "district": "sovetsky",
+      "source_url": "https://www.openstreetmap.org/way/359284859"
+    },
+    {
+      "external_id": "osm:way/450772086",
+      "name": "Спорткомплекс ЮФУ \"Южный меридиан\"",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2208959,
+      "lon": 39.6298603,
+      "address": "Благодатная улица, 161",
+      "district": "sovetsky",
+      "source_url": "https://www.openstreetmap.org/way/450772086"
+    },
+    {
+      "external_id": "osm:way/450772094",
+      "name": "Южный Меридиан",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.220852,
+      "lon": 39.6297522,
+      "address": "Благодатная улица, 161/1",
+      "district": "sovetsky",
+      "source_url": "https://www.openstreetmap.org/way/450772094"
+    },
+    {
+      "external_id": "osm:way/47027378",
+      "name": "бывший Ростовский Ипподром",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2363416,
+      "lon": 39.7236016,
+      "address": "",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/way/47027378"
+    },
+    {
+      "external_id": "osm:way/48271263",
+      "name": "Арсенал",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2015173,
+      "lon": 39.6278605,
+      "address": "2-я Краснодарская улица, 145 к6",
+      "district": "zheleznodorozhny",
+      "source_url": "https://www.openstreetmap.org/way/48271263"
+    },
+    {
+      "external_id": "osm:way/631062491",
+      "name": "Гражданский стрелковый полигон",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.3232742,
+      "lon": 39.4903323,
+      "address": "",
+      "district": "sovetsky",
+      "phone": "+79612802209",
+      "source_url": "https://www.openstreetmap.org/way/631062491"
+    },
+    {
+      "external_id": "osm:way/724725134",
+      "name": "ФТЦ СВОЙ ФУТБОЛ",
+      "sports": [
+        "team"
+      ],
+      "lat": 47.3569659,
+      "lon": 39.7274852,
+      "address": "",
+      "district": "voroshilovsky",
+      "source_url": "https://www.openstreetmap.org/way/724725134"
+    },
+    {
+      "external_id": "osm:way/72925734",
+      "name": "Бассейн Коралл",
+      "sports": [
+        "swimming"
+      ],
+      "lat": 47.2466538,
+      "lon": 39.7593135,
+      "address": "улица 1-й Конной Армии, 6Д",
+      "district": "proletarsky",
+      "website": "https://korall-rostov.ru/",
+      "source_url": "https://www.openstreetmap.org/way/72925734"
+    },
+    {
+      "external_id": "osm:way/76273297",
+      "name": "Дворец спорта",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2279794,
+      "lon": 39.6964319,
+      "address": "Доломановский переулок, 70А",
+      "district": "leninsky",
+      "source_url": "https://www.openstreetmap.org/way/76273297"
+    },
+    {
+      "external_id": "osm:way/77169162",
+      "name": "Дельфин",
+      "sports": [
+        "swimming"
+      ],
+      "lat": 47.2752881,
+      "lon": 39.7587092,
+      "address": "Ростовская обл., г. Ростов-на-Дону, ул .Киргизская, 12-а",
+      "district": "pervomaysky",
+      "source_url": "https://www.openstreetmap.org/way/77169162"
+    },
+    {
+      "external_id": "osm:way/77503698",
+      "name": "Ледоград",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2310694,
+      "lon": 39.745419,
+      "address": "",
+      "district": "proletarsky",
+      "source_url": "https://www.openstreetmap.org/way/77503698"
+    },
+    {
+      "external_id": "osm:way/77509984",
+      "name": "Бриз",
+      "sports": [
+        "swimming"
+      ],
+      "lat": 47.2355348,
+      "lon": 39.7330286,
+      "address": "Крепостной переулок, 128",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/way/77509984"
+    },
+    {
+      "external_id": "osm:way/79190722",
+      "name": "Олимп",
+      "sports": [
+        "team"
+      ],
+      "lat": 47.2453604,
+      "lon": 39.7598271,
+      "address": "улица 1-й Конной Армии, 4Е",
+      "district": "proletarsky",
+      "source_url": "https://www.openstreetmap.org/way/79190722"
+    },
+    {
+      "external_id": "osm:way/82200994",
+      "name": "Стадион \"Авиатор\"",
+      "sports": [
+        "team"
+      ],
+      "lat": 47.2626692,
+      "lon": 39.8003869,
+      "address": "",
+      "district": "pervomaysky",
+      "source_url": "https://www.openstreetmap.org/way/82200994"
+    },
+    {
+      "external_id": "osm:way/84037175",
+      "name": "Олимпия Men",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2382435,
+      "lon": 39.7183079,
+      "address": "Ахтарский переулок, 1",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/way/84037175"
+    },
+    {
+      "external_id": "osm:way/84962971",
+      "name": "Спортивный комплекс \"Восход\"",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2455996,
+      "lon": 39.7189623,
+      "address": "",
+      "district": "kirovsky",
+      "opening_hours": "Mo-Su 10:00-22:00",
+      "source_url": "https://www.openstreetmap.org/way/84962971"
+    },
+    {
+      "external_id": "osm:way/86254752",
+      "name": "Локомотив",
+      "sports": [
+        "team"
+      ],
+      "lat": 47.2123172,
+      "lon": 39.6679668,
+      "address": "проспект Стачки",
+      "district": "zheleznodorozhny",
+      "source_url": "https://www.openstreetmap.org/way/86254752"
+    },
+    {
+      "external_id": "osm:way/907847287",
+      "name": "Детский центр Kinder Space",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2360556,
+      "lon": 39.5886028,
+      "address": "улица Жданова, 24",
+      "district": "sovetsky",
+      "phone": "+7 (863) 308‒80‒10",
+      "opening_hours": "08:00-20:00",
+      "source_url": "https://www.openstreetmap.org/way/907847287"
+    },
+    {
+      "external_id": "osm:way/91677538",
+      "name": "Fitron",
+      "sports": [
+        "fitness"
+      ],
+      "lat": 47.2358491,
+      "lon": 39.7050797,
+      "address": "Соборный переулок, 94Г",
+      "district": "kirovsky",
+      "source_url": "https://www.openstreetmap.org/way/91677538"
+    },
+    {
+      "external_id": "osm:way/97341326",
+      "name": "Energy Plaza",
+      "sports": [
+        "multi"
+      ],
+      "lat": 47.2275915,
+      "lon": 39.6211967,
+      "address": "улица 339-й Стрелковой Дивизии, 23 к4",
+      "district": "sovetsky",
+      "source_url": "https://www.openstreetmap.org/way/97341326"
+    },
+    {
+      "external_id": "osm:way/999724433",
+      "name": "Прыжки в длину",
+      "sports": [
+        "athletics"
+      ],
+      "lat": 47.2204254,
+      "lon": 39.6299504,
+      "address": "",
+      "district": "sovetsky",
+      "source_url": "https://www.openstreetmap.org/way/999724433"
+    }
+  ]
+}
