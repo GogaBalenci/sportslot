@@ -6,12 +6,87 @@ solution_name: "СпортСлот"
 team_id: "TEAM_ID_PLACEHOLDER"
 
 # 3. Базовый адрес API
-base_url: "http://localhost:8080"
+base_url: "https://sportslot.space"
 
-# 4-9. Перечень обязательных проверок с методами, параметрами, ролями,
-# статус-кодами и форматом ответа
+# Тестовые учётные записи для ролей, указанных в проверках.
+# user    — заголовок X-MAX-User-ID принимается только для тестовых id из TEST_MAX_USER_IDS;
+#           реальные пользователи мини-приложения авторизуются подписью MAX (Authorization: tma <initData>).
+# partner — администратор студии: код доступа указан на первом слайде презентации,
+#           токен из /api/v1/partner/login передаётся как "Authorization: Partner <token>".
+test_accounts:
+  - role: "user"
+    headers:
+      X-MAX-User-ID: "max-test-user-001"
+    user_id: "c1111111-0000-0000-0000-000000000001"
+  - role: "partner"
+    login:
+      method: POST
+      path: "/api/v1/partner/login"
+      body:
+        code: "<PARTNER_DEMO_CODE с первого слайда>"
+
+# Тестовые данные: каталог площадок OpenStreetMap — seed-data/rostov_catalog.json;
+# демо-партнёры и расписание создаются при старте API (internal/seed/demo.go).
+# Площадка a1111111-...-0001 и занятия b1111111-...-0001/0002 существуют всегда
+# и автоматически переносятся в будущее.
+
+# 4-9. Обязательные проверки: метод, путь, параметры, роль, статус-коды, формат ответа
 required_checks:
-  - name: "Поиск слотов по критериям и диапазону дат"
+  - name: "Health-check"
+    method: GET
+    path: "/api/v1/health"
+    role: "system"
+    request_params: {}
+    expected_status: [200]
+    expected_response:
+      content_type: "application/json"
+      required_fields: ["status"]
+
+  - name: "Справочники: виды спорта, районы, вопросы подбора"
+    method: GET
+    path: "/api/v1/catalog"
+    role: "system"
+    request_params: {}
+    expected_status: [200]
+    expected_response:
+      content_type: "application/json"
+      required_fields: ["sports", "districts", "whens", "quiz", "data_sources"]
+
+  - name: "Подбор вида спорта по ответам"
+    method: POST
+    path: "/api/v1/quiz/recommend"
+    role: "user"
+    request_params:
+      headers:
+        Content-Type: "application/json"
+      body:
+        answers:
+          goal: "stress"
+          water: "love"
+          format: "solo"
+          pace: "calm"
+          contact: "no"
+    expected_status: [200]
+    expected_response:
+      content_type: "application/json"
+      required_fields: ["results"]
+
+  - name: "Площадки по фильтрам (онлайн-запись и каталог OSM)"
+    method: GET
+    path: "/api/v1/venues"
+    role: "user"
+    request_params:
+      query:
+        sport: "boxing"
+        when: "any"
+        lat: 47.2336
+        lon: 39.6179
+    expected_status: [200, 400]
+    expected_response:
+      content_type: "application/json"
+      required_fields: ["venues", "meta.data_source", "meta.generated_at"]
+
+  - name: "Поиск свободных занятий по критериям и диапазону дат"
     method: POST
     path: "/api/v1/search"
     role: "user"
@@ -21,11 +96,11 @@ required_checks:
         X-MAX-User-ID: "max-test-user-001"
       body:
         sport_type: "boxing"
-        lat: 55.751244
-        lon: 37.618423
-        radius_km: 15
+        lat: 47.2225
+        lon: 39.7185
+        radius_km: 20
         date_from: "2026-09-29"
-        date_to: "2026-10-30"
+        date_to: "2026-12-31"
         time_from: "18:00"
         time_to: "21:00"
         level: "beginner"
@@ -34,7 +109,7 @@ required_checks:
       content_type: "application/json"
       required_fields: ["results", "meta.data_source", "meta.generated_at"]
 
-  - name: "Получение деталей площадки"
+  - name: "Получение деталей площадки с расписанием"
     method: GET
     path: "/api/v1/venues/{id}"
     role: "user"
@@ -46,7 +121,7 @@ required_checks:
       content_type: "application/json"
       required_fields: ["venue_id", "name", "address", "all_slots"]
 
-  - name: "Создание брони (с авторизацией по X-MAX-User-ID)"
+  - name: "Создание записи (повторный запрос возвращает существующую запись)"
     method: POST
     path: "/api/v1/bookings"
     role: "user"
@@ -57,17 +132,30 @@ required_checks:
       body:
         slot_id: "b1111111-0000-0000-0000-000000000001"
         source_channel: "miniapp"
-    expected_status: [201, 409, 400, 401]
+    expected_status: [201, 200, 409, 400, 401]
     expected_response:
       content_type: "application/json"
-      required_fields: ["id", "status", "source_channel"]
+      required_fields: ["id", "status", "source_channel", "checkin_code"]
 
-  - name: "Перенос брони на другой слот"
+  - name: "Записи текущего пользователя"
+    method: GET
+    path: "/api/v1/me"
+    role: "user"
+    request_params:
+      headers:
+        X-MAX-User-ID: "max-test-user-001"
+    expected_status: [200, 401]
+    expected_response:
+      content_type: "application/json"
+      required_fields: ["user", "bookings"]
+
+  - name: "Перенос записи на другое занятие"
     method: PATCH
     path: "/api/v1/bookings/{id}/reschedule"
     role: "user"
     request_params:
       headers:
+        Content-Type: "application/json"
         X-MAX-User-ID: "max-test-user-001"
       path:
         id: "test-booking-uuid"
@@ -78,7 +166,7 @@ required_checks:
       content_type: "application/json"
       required_fields: ["id", "slot_id", "status"]
 
-  - name: "Отмена брони"
+  - name: "Отмена записи"
     method: DELETE
     path: "/api/v1/bookings/{id}"
     role: "user"
@@ -87,12 +175,12 @@ required_checks:
         X-MAX-User-ID: "max-test-user-001"
       path:
         id: "test-booking-uuid"
-    expected_status: [204, 404, 401]
+    expected_status: [204, 404, 409, 401]
     expected_response:
       content_type: "application/json"
       required_fields: []
 
-  - name: "Список броней пользователя"
+  - name: "Список записей пользователя"
     method: GET
     path: "/api/v1/bookings/user/{user_id}"
     role: "user"
@@ -106,12 +194,26 @@ required_checks:
       content_type: "application/json"
       required_fields: []
 
-  - name: "Health-check"
+  - name: "Вход администратора студии"
+    method: POST
+    path: "/api/v1/partner/login"
+    role: "partner"
+    request_params:
+      headers:
+        Content-Type: "application/json"
+      body:
+        code: "<PARTNER_DEMO_CODE с первого слайда>"
+    expected_status: [200, 401, 429]
+    expected_response:
+      content_type: "application/json"
+      required_fields: ["token", "expires_at"]
+
+  - name: "Воронка пилота (агрегаты без персональных данных)"
     method: GET
-    path: "/api/v1/health"
+    path: "/api/v1/stats"
     role: "system"
     request_params: {}
     expected_status: [200]
     expected_response:
       content_type: "application/json"
-      required_fields: ["status"]
+      required_fields: ["since", "unique_users"]
