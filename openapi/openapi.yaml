@@ -141,6 +141,27 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/VenueDetails" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/geocode:
+    get:
+      tags: [catalog]
+      summary: Адрес в Ростове-на-Дону → координаты (геокодер 2ГИС на сервере)
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 3, maxLength: 200, example: "Большая Садовая, 1" } }
+      responses:
+        "200":
+          description: Найденная точка
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lat: { type: number }
+                  lon: { type: number }
+                  address: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { description: Слишком много запросов }
+        "503": { description: Геокодер недоступен (нет ключа или ошибка 2ГИС) }
   /api/v1/search:
     post:
       tags: [catalog]
@@ -197,6 +218,14 @@ paths:
                   bookings:
                     type: array
                     items: { $ref: "#/components/schemas/BookingView" }
+                  last_location:
+                    type: object
+                    description: Последняя точка, отправленная боту в чат (не старше 7 дней)
+                    properties:
+                      lat: { type: number }
+                      lon: { type: number }
+                      address: { type: string }
+                      at: { type: string, format: date-time }
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/bookings:
     post:
@@ -542,6 +571,7 @@ components:
             mode: { type: string, enum: [walking, transit, driving] }
             minutes: { type: integer, example: 14 }
             estimated: { type: boolean, description: "true — оценка по расстоянию, маршрут не построен" }
+        beyond_limit: { type: boolean, description: "Зал за пределами max_minutes, добавлен, когда в лимит попало меньше 4 залов" }
         slots: { type: array, items: { $ref: "#/components/schemas/SlotInfo" } }
         available_slots: { type: integer }
     VenueDetails:

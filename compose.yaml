@@ -38,6 +38,7 @@ services:
       DEMO_DATA: ${DEMO_DATA:-on}
       PARTNER_DEMO_CODE: ${PARTNER_DEMO_CODE:-}
       DGIS_API_KEY: ${DGIS_API_KEY:-}
+      DGIS_CATALOG_URL: ${DGIS_CATALOG_URL:-https://catalog.api.2gis.com}
       TEST_MAX_USER_IDS: ${TEST_MAX_USER_IDS:-max-test-user-001}
     ports:
       - "${API_PORT:-8080}:8080"

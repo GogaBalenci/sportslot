@@ -102,6 +102,18 @@ required_checks:
       content_type: "application/json"
       required_fields: ["venues", "meta.data_source", "meta.generated_at"]
 
+  - name: "Адрес в Ростове → координаты (геокодер 2ГИС)"
+    method: GET
+    path: "/api/v1/geocode"
+    role: "user"
+    request_params:
+      query:
+        q: "Большая Садовая, 1"
+    expected_status: [200, 404, 503]
+    expected_response:
+      content_type: "application/json"
+      required_fields: ["lat", "lon", "address"]
+
   - name: "Поиск свободных занятий по критериям и диапазону дат"
     method: POST
     path: "/api/v1/search"
