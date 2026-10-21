@@ -34,6 +34,19 @@ func New(t *testing.T) *postgres.Store {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
+	// Пакеты тестируются параллельными процессами, а база одна: держим
+	// межпроцессную блокировку, пока тест работает со схемой.
+	lock, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lock.Exec(ctx, `SELECT pg_advisory_lock(7310)`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = lock.Exec(context.Background(), `SELECT pg_advisory_unlock(7310)`)
+		lock.Release()
+	})
 	if _, err := pool.Exec(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public;`); err != nil {
 		t.Fatal(err)
 	}
