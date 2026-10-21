@@ -9,17 +9,26 @@ import (
 	"sportslot/internal/catalog"
 	"sportslot/internal/model"
 	"sportslot/internal/repository/postgres"
+	"sportslot/internal/routing"
 )
 
 type SearchService struct {
 	store       *postgres.Store
 	includeDemo bool
 	catalogDate time.Time
+	router      routing.Router
 }
 
 func NewSearchService(store *postgres.Store, includeDemo bool, catalogDate time.Time) *SearchService {
-	return &SearchService{store: store, includeDemo: includeDemo, catalogDate: catalogDate}
+	return &SearchService{store: store, includeDemo: includeDemo, catalogDate: catalogDate, router: routing.Estimator{}}
 }
+
+// SetRouter подключает расчёт времени в пути (по умолчанию — оценка по расстоянию).
+func (s *SearchService) SetRouter(r routing.Router) { s.router = r }
+
+// routedLimit — сколько ближайших площадок получают точное время в пути за один
+// поиск (одна матрица 2ГИС). Остальным достаётся оценка.
+const routedLimit = 24
 
 func (s *SearchService) DemoEnabled() bool      { return s.includeDemo }
 func (s *SearchService) CatalogDate() time.Time { return s.catalogDate }
@@ -32,11 +41,23 @@ type VenueSearch struct {
 	Lat, Lon    float64
 	HasPoint    bool
 	InstantOnly bool
+	// Mode и MaxMinutes — способ передвижения и лимит времени в пути.
+	// Учитываются только вместе с точкой пользователя.
+	Mode       routing.Mode
+	MaxMinutes int
+}
+
+// Travel — время в пути от пользователя; Estimated — оценка без маршрута.
+type Travel struct {
+	Mode      routing.Mode `json:"mode"`
+	Minutes   int          `json:"minutes"`
+	Estimated bool         `json:"estimated"`
 }
 
 type VenueCard struct {
 	Venue          model.Venue      `json:"venue"`
 	DistanceKM     float64          `json:"distance_km"`
+	Travel         *Travel          `json:"travel,omitempty"`
 	Slots          []model.SlotInfo `json:"slots"`
 	AvailableSlots int              `json:"available_slots"`
 }
@@ -101,14 +122,66 @@ func (s *SearchService) FindVenues(ctx context.Context, q VenueSearch, now time.
 		cards = append(cards, card)
 	}
 
+	if q.HasPoint && q.Mode != "" {
+		cards = s.withTravel(ctx, cards, q)
+	}
+
 	sort.SliceStable(cards, func(i, j int) bool {
 		gi, gj := group(cards[i]), group(cards[j])
 		if gi != gj {
 			return gi < gj
 		}
+		if cards[i].Travel != nil && cards[j].Travel != nil && cards[i].Travel.Minutes != cards[j].Travel.Minutes {
+			return cards[i].Travel.Minutes < cards[j].Travel.Minutes
+		}
 		return cards[i].DistanceKM < cards[j].DistanceKM
 	})
 	return cards, nil
+}
+
+// withTravel добавляет время в пути и отбрасывает площадки за пределами лимита.
+// Заведомо далёкие отсекаются по прямому расстоянию ещё до запроса маршрутов.
+func (s *SearchService) withTravel(ctx context.Context, cards []VenueCard, q VenueSearch) []VenueCard {
+	if q.MaxMinutes > 0 {
+		limit := routing.MaxStraightKM(q.Mode, q.MaxMinutes)
+		kept := cards[:0]
+		for _, c := range cards {
+			if c.DistanceKM <= limit {
+				kept = append(kept, c)
+			}
+		}
+		cards = kept
+	}
+	sort.SliceStable(cards, func(i, j int) bool { return cards[i].DistanceKM < cards[j].DistanceKM })
+
+	from := routing.Point{Lat: q.Lat, Lon: q.Lon}
+	n := len(cards)
+	if n > routedLimit {
+		n = routedLimit
+	}
+	targets := make([]routing.Point, n)
+	for i := 0; i < n; i++ {
+		targets[i] = routing.Point{Lat: cards[i].Venue.Lat, Lon: cards[i].Venue.Lon}
+	}
+	trips := s.router.Trips(ctx, from, targets, q.Mode)
+	for i := range cards {
+		trip := routing.Estimate(from, routing.Point{Lat: cards[i].Venue.Lat, Lon: cards[i].Venue.Lon}, q.Mode)
+		if i < len(trips) {
+			trip = trips[i]
+		}
+		cards[i].Travel = &Travel{Mode: q.Mode, Minutes: trip.Minutes(), Estimated: trip.Estimated}
+	}
+
+	if q.MaxMinutes <= 0 {
+		return cards
+	}
+	kept := cards[:0]
+	for _, c := range cards {
+		if c.Travel.Minutes <= q.MaxMinutes {
+			kept = append(kept, c)
+		}
+	}
+	return kept
 }
 
 func group(c VenueCard) int {

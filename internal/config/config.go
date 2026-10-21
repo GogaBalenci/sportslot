@@ -25,6 +25,10 @@ type Config struct {
 	MiniAppURL    string
 	CORSOrigins   []string
 
+	// DGISAPIKey — ключ 2ГИС для матрицы времени в пути; пусто — время оценивается.
+	DGISAPIKey  string
+	DGISBaseURL string
+
 	CatalogPath      string
 	DemoData         bool
 	PartnerDemoCode  string
@@ -45,6 +49,8 @@ func Load() (*Config, error) {
 		MiniAppButton:    getEnv("MINI_APP_BUTTON", "link"),
 		MiniAppURL:       getEnv("MINI_APP_URL", "http://localhost:5173"),
 		CORSOrigins:      splitList(getEnv("CORS_ORIGINS", "http://localhost:5173")),
+		DGISAPIKey:       os.Getenv("DGIS_API_KEY"),
+		DGISBaseURL:      getEnv("DGIS_ROUTING_URL", "https://routing.api.2gis.com"),
 		CatalogPath:      getEnv("CATALOG_PATH", "seed-data/rostov_catalog.json"),
 		DemoData:         getEnv("DEMO_DATA", "on") != "off",
 		PartnerDemoCode:  os.Getenv("PARTNER_DEMO_CODE"),

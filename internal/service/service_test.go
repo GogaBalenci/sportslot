@@ -10,6 +10,7 @@ import (
 
 	"sportslot/internal/model"
 	"sportslot/internal/repository/postgres"
+	"sportslot/internal/routing"
 	"sportslot/internal/seed"
 	"sportslot/internal/service"
 	"sportslot/internal/testdb"
@@ -299,5 +300,83 @@ func TestSearchPutsBookableStudiosFirst(t *testing.T) {
 		if c.Venue.IsDemo() {
 			t.Fatal("demo venue shown with DEMO_DATA=off")
 		}
+	}
+}
+
+// fixedRouter считает «точное» время как оценку пешком и запоминает размер запросов.
+type fixedRouter struct {
+	mu    sync.Mutex
+	sizes []int
+}
+
+func (r *fixedRouter) Trips(_ context.Context, from routing.Point, to []routing.Point, mode routing.Mode) []routing.Trip {
+	r.mu.Lock()
+	r.sizes = append(r.sizes, len(to))
+	r.mu.Unlock()
+	trips := make([]routing.Trip, len(to))
+	for i, p := range to {
+		trips[i] = routing.Estimate(from, p, mode)
+		trips[i].Estimated = false
+	}
+	return trips
+}
+
+func TestSearchByTravelTime(t *testing.T) {
+	store := testdb.New(t)
+	ctx := context.Background()
+	if _, err := seed.LoadCatalog(ctx, store, "../../seed-data/rostov_catalog.json"); err != nil {
+		t.Fatal(err)
+	}
+	router := &fixedRouter{}
+	search := service.NewSearchService(store, true, time.Now())
+	search.SetRouter(router)
+
+	// Точка у клуба «Стойка» в Советском районе.
+	q := service.VenueSearch{When: "any", Lat: 47.2336, Lon: 39.6179, HasPoint: true, Mode: routing.Walking, MaxMinutes: 15}
+	cards, err := search.FindVenues(ctx, q, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) == 0 || cards[0].Venue.Name != "Клуб единоборств «Стойка»" {
+		t.Fatalf("nearest studio must be first, got %d cards", len(cards))
+	}
+	for _, c := range cards {
+		if c.Travel == nil || c.Travel.Minutes > 15 || c.Travel.Estimated {
+			t.Fatalf("card outside the limit or without route: %s %+v", c.Venue.Name, c.Travel)
+		}
+	}
+	for _, n := range router.sizes {
+		if n > 24 {
+			t.Fatalf("one matrix request must not exceed 24 venues, got %d", n)
+		}
+	}
+
+	// Без лимита все площадки получают время, а внутри группы сортируются по минутам.
+	q.MaxMinutes = 0
+	q.Mode = routing.Transit
+	all, err := search.FindVenues(ctx, q, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) <= len(cards) {
+		t.Fatalf("no limit must return more venues: %d vs %d", len(all), len(cards))
+	}
+	estimated := 0
+	for _, c := range all {
+		if c.Travel == nil {
+			t.Fatalf("travel missing for %s", c.Venue.Name)
+		}
+		if c.Travel.Estimated {
+			estimated++
+		}
+	}
+	if estimated == 0 {
+		t.Fatal("venues beyond one matrix must be estimated")
+	}
+
+	// Без способа передвижения поиск работает как раньше.
+	plain, _ := search.FindVenues(ctx, service.VenueSearch{When: "any", District: "sovetsky"}, time.Now())
+	if len(plain) == 0 || plain[0].Travel != nil {
+		t.Fatal("travel must be absent without a point and mode")
 	}
 }

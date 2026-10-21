@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"sportslot/internal/catalog"
 	"sportslot/internal/model"
 	"sportslot/internal/quiz"
+	"sportslot/internal/routing"
 	"sportslot/internal/service"
 )
 
@@ -98,6 +100,22 @@ func (a *API) Venues(w http.ResponseWriter, r *http.Request) {
 	}
 	if lat, lon, ok := parsePoint(q.Get("lat"), q.Get("lon")); ok {
 		search.Lat, search.Lon, search.HasPoint = lat, lon, true
+	}
+	if raw := q.Get("mode"); raw != "" {
+		mode, ok := routing.ParseMode(raw)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "invalid_mode", "mode: walking, transit или driving")
+			return
+		}
+		search.Mode = mode
+	}
+	if raw := q.Get("max_minutes"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 0 || n > 180 {
+			writeError(w, http.StatusBadRequest, "invalid_max_minutes", "max_minutes: целое число от 0 до 180")
+			return
+		}
+		search.MaxMinutes = n
 	}
 	cards, err := a.search.FindVenues(r.Context(), search, a.now())
 	if err != nil {

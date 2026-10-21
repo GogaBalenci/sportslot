@@ -15,6 +15,7 @@ import (
 	"sportslot/internal/handler"
 	"sportslot/internal/maxclient"
 	"sportslot/internal/repository/postgres"
+	"sportslot/internal/routing"
 	"sportslot/internal/seed"
 	"sportslot/internal/service"
 	"sportslot/migrations"
@@ -60,6 +61,12 @@ func main() {
 	initMaxBot(ctx, client, cfg)
 
 	search := service.NewSearchService(store, cfg.DemoData, catalogFile.ExportedAt)
+	if cfg.DGISAPIKey != "" {
+		search.SetRouter(routing.NewDGIS(cfg.DGISBaseURL, cfg.DGISAPIKey))
+		log.Println("travel time: 2GIS distance matrix")
+	} else {
+		log.Println("DGIS_API_KEY is empty: travel time is estimated from distance")
+	}
 	bookings := service.NewBookingService(store)
 	partner := service.NewPartnerService(store, cfg.PartnerDemoCode)
 	presenter := bot.NewPresenter(client)

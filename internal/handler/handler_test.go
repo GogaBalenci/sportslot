@@ -16,6 +16,7 @@ import (
 	"sportslot/internal/bot"
 	"sportslot/internal/handler"
 	"sportslot/internal/maxclient"
+	"sportslot/internal/routing"
 	"sportslot/internal/seed"
 	"sportslot/internal/service"
 	"sportslot/internal/testdb"
@@ -75,6 +76,7 @@ func newServer(t *testing.T) (*httptest.Server, *fakeMax) {
 	max := newFakeMax(t)
 	client := maxclient.NewClient(max.server.URL, botToken)
 	search := service.NewSearchService(store, true, time.Now())
+	search.SetRouter(routing.NewDGIS(fake2GIS(t), "dgis-key"))
 	bookings := service.NewBookingService(store)
 	partner := service.NewPartnerService(store, "partner-code")
 	presenter := bot.NewPresenter(client)
@@ -143,8 +145,13 @@ func TestBotScenarioFromStartToBooking(t *testing.T) {
 
 	// Геолокация рядом с клубом «Стойка» в Советском районе.
 	webhook(t, srv, `{"update_type":"message_created","message":{"sender":{"user_id":777},"body":{"attachments":[{"type":"location","latitude":47.2336,"longitude":39.6179}]}}}`)
-	max.next(t, "рядом с тобой")
+	max.next(t, "Как будешь добираться")
+	webhook(t, srv, callback("tm:walking:15"))
+	max.next(t, "до 15 мин пешком")
 	card := max.next(t, "Стойка")
+	if !strings.Contains(card, "5 мин пешком") || strings.Contains(card, "≈") {
+		t.Fatalf("card must show the route time from 2GIS: %s", card)
+	}
 	start := strings.Index(card, `"bk:`)
 	if start < 0 {
 		t.Fatalf("card has no booking button: %s", card)
@@ -292,5 +299,41 @@ func TestPartnerCheckIn(t *testing.T) {
 	max.next(t, "Как прошло")
 	if status, _ := call(t, http.MethodPost, srv.URL+"/api/v1/partner/checkin", partner, map[string]string{"code": code}); status != http.StatusConflict {
 		t.Fatalf("second check-in: want 409, got %d", status)
+	}
+}
+
+// fake2GIS отвечает на матрицу расстояний: до любого зала 5 минут.
+func fake2GIS(t *testing.T) string {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Targets []int `json:"targets"`
+		}
+		if r.URL.Query().Get("key") != "dgis-key" || json.NewDecoder(r.Body).Decode(&req) != nil {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		routes := []map[string]interface{}{}
+		for _, target := range req.Targets {
+			routes = append(routes, map[string]interface{}{"status": "OK", "source_id": 0, "target_id": target, "distance": 400, "duration": 300})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"routes": routes})
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+func TestVenuesByTravelTime(t *testing.T) {
+	srv, _ := newServer(t)
+	status, body := call(t, http.MethodGet, srv.URL+"/api/v1/venues?sport=boxing&lat=47.2336&lon=39.6179&mode=transit&max_minutes=20", nil, nil)
+	venues, _ := body["venues"].([]interface{})
+	if status != http.StatusOK || len(venues) == 0 {
+		t.Fatalf("status %d, %d venues", status, len(venues))
+	}
+	travel := venues[0].(map[string]interface{})["travel"].(map[string]interface{})
+	if travel["mode"] != "transit" || travel["minutes"].(float64) != 5 || travel["estimated"] != false {
+		t.Fatalf("unexpected travel: %v", travel)
+	}
+	if status, _ := call(t, http.MethodGet, srv.URL+"/api/v1/venues?mode=bike", nil, nil); status != http.StatusBadRequest {
+		t.Fatalf("invalid mode: want 400, got %d", status)
 	}
 }
