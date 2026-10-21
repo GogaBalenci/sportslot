@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ import (
 
 	"sportslot/internal/auth"
 	"sportslot/internal/bot"
+	"sportslot/internal/geocode"
 	"sportslot/internal/handler"
 	"sportslot/internal/maxclient"
 	"sportslot/internal/routing"
@@ -76,15 +78,19 @@ func newServer(t *testing.T) (*httptest.Server, *fakeMax) {
 	max := newFakeMax(t)
 	client := maxclient.NewClient(max.server.URL, botToken)
 	search := service.NewSearchService(store, true, time.Now())
-	search.SetRouter(routing.NewDGIS(fake2GIS(t), "dgis-key"))
+	dgis := fake2GIS(t)
+	search.SetRouter(routing.NewDGIS(dgis, "dgis-key"))
+	geocoder := geocode.New(dgis, "dgis-key")
 	bookings := service.NewBookingService(store)
 	partner := service.NewPartnerService(store, "partner-code")
 	presenter := bot.NewPresenter(client)
 	bookings.SetPresenter(presenter)
 	partner.SetPresenter(presenter)
+	chatBot := bot.New(client, store, search, bookings, presenter)
+	chatBot.SetGeocoder(geocoder)
 	router := handler.NewRouter(handler.Dependencies{
-		Search: search, Bookings: bookings, Partner: partner,
-		Bot:         bot.New(client, store, search, bookings, presenter),
+		Search: search, Bookings: bookings, Partner: partner, Geocoder: geocoder,
+		Bot:         chatBot,
 		Auth:        handler.UserAuth{BotToken: botToken, MaxAge: time.Hour, TestUsers: map[string]bool{seed.TestMaxUserID: true}},
 		CORSOrigins: []string{"*"}, WebhookSecret: "hook-secret",
 	})
@@ -159,7 +165,7 @@ func TestBotScenarioFromStartToBooking(t *testing.T) {
 	slotID := card[start+4 : start+40]
 
 	webhook(t, srv, callback("bk:"+slotID))
-	confirmation := max.next(t, "Записал тебя")
+	confirmation := max.next(t, "Ты записан на пробное занятие")
 	for _, want := range []string{"Код входа", "ticket_", "rs:", "cx:"} {
 		if !strings.Contains(confirmation, want) {
 			t.Fatalf("confirmation misses %q: %s", want, confirmation)
@@ -302,9 +308,18 @@ func TestPartnerCheckIn(t *testing.T) {
 	}
 }
 
-// fake2GIS отвечает на матрицу расстояний: до любого зала 5 минут.
+// fake2GIS отвечает на матрицу расстояний (до любого зала 5 минут) и на
+// геокодер (любой адрес с «Малиновского» — у клуба «Стойка»).
 func fake2GIS(t *testing.T) string {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/3.0/items/geocode" {
+			if strings.Contains(r.URL.Query().Get("q"), "Малиновского") {
+				_, _ = w.Write([]byte(`{"meta":{"code":200},"result":{"items":[{"address_name":"Малиновского, 16","point":{"lat":47.2336,"lon":39.6179}}]}}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"meta":{"code":404}}`))
+			return
+		}
 		var req struct {
 			Targets []int `json:"targets"`
 		}
@@ -335,5 +350,47 @@ func TestVenuesByTravelTime(t *testing.T) {
 	}
 	if status, _ := call(t, http.MethodGet, srv.URL+"/api/v1/venues?mode=bike", nil, nil); status != http.StatusBadRequest {
 		t.Fatalf("invalid mode: want 400, got %d", status)
+	}
+}
+
+func TestBotAcceptsTypedAddress(t *testing.T) {
+	srv, max := newServer(t)
+	webhook(t, srv, callback("sp:boxing"))
+	webhook(t, srv, callback("w:any"))
+	max.next(t, "Отправь геолокацию")
+
+	text := func(s string) string {
+		return `{"update_type":"message_created","message":{"sender":{"user_id":777},"body":{"text":"` + s + `"}}}`
+	}
+	webhook(t, srv, text("где-то на Луне"))
+	max.next(t, "Не нашёл такой адрес")
+	webhook(t, srv, text("Малиновского 16"))
+	max.next(t, "Считаю от адреса")
+	max.next(t, "Как будешь добираться")
+	webhook(t, srv, callback("tm:transit:20"))
+	card := max.next(t, "Стойка")
+	if !strings.Contains(card, "5 мин на транспорте") || !strings.Contains(card, "rtext=47.233600,39.617900~") || !strings.Contains(card, "rtt=mt") {
+		t.Fatalf("card must show travel time and route from the user's point: %s", card)
+	}
+
+	// Мини-приложение получает эту точку как последнюю известную.
+	status, me := call(t, http.MethodGet, srv.URL+"/api/v1/me", map[string]string{"Authorization": "tma " + initData(777)}, nil)
+	loc, _ := me["last_location"].(map[string]interface{})
+	if status != http.StatusOK || loc == nil || loc["lat"].(float64) != 47.2336 || loc["address"] != "Малиновского, 16" {
+		t.Fatalf("last_location missing: %d %v", status, me)
+	}
+}
+
+func TestGeocodeEndpoint(t *testing.T) {
+	srv, _ := newServer(t)
+	status, body := call(t, http.MethodGet, srv.URL+"/api/v1/geocode?q="+url.QueryEscape("ул. Малиновского, 16"), nil, nil)
+	if status != http.StatusOK || body["lat"].(float64) != 47.2336 || body["address"] != "Малиновского, 16" {
+		t.Fatalf("geocode: %d %v", status, body)
+	}
+	if status, _ := call(t, http.MethodGet, srv.URL+"/api/v1/geocode?q="+url.QueryEscape("Луна"), nil, nil); status != http.StatusNotFound {
+		t.Fatalf("unknown address: want 404, got %d", status)
+	}
+	if status, _ := call(t, http.MethodGet, srv.URL+"/api/v1/geocode?q=a", nil, nil); status != http.StatusBadRequest {
+		t.Fatalf("short query: want 400, got %d", status)
 	}
 }

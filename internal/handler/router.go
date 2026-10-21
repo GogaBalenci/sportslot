@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/cors"
 
 	"sportslot/internal/bot"
+	"sportslot/internal/geocode"
 	"sportslot/internal/service"
 )
 
@@ -16,6 +17,7 @@ type Dependencies struct {
 	Search        *service.SearchService
 	Bookings      *service.BookingService
 	Partner       *service.PartnerService
+	Geocoder      *geocode.Geocoder
 	Bot           *bot.Bot
 	Auth          UserAuth
 	CORSOrigins   []string
@@ -39,7 +41,9 @@ func NewRouter(deps Dependencies) http.Handler {
 		search:   deps.Search,
 		bookings: deps.Bookings,
 		partner:  deps.Partner,
+		geocoder: deps.Geocoder,
 		logins:   newLimiter(10, time.Minute),
+		lookups:  newLimiter(40, time.Minute),
 		now:      time.Now,
 	}
 	health := NewHealthHandler()
@@ -62,6 +66,7 @@ func NewRouter(deps Dependencies) http.Handler {
 		r.Post("/quiz/recommend", api.QuizRecommend)
 		r.Get("/venues", api.Venues)
 		r.Get("/venues/{id}", api.Venue)
+		r.Get("/geocode", api.Geocode)
 		r.Post("/search", api.Search)
 		r.Get("/stats", api.Stats)
 

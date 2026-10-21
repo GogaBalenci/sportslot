@@ -12,6 +12,7 @@ import (
 
 	"sportslot/internal/bot"
 	"sportslot/internal/config"
+	"sportslot/internal/geocode"
 	"sportslot/internal/handler"
 	"sportslot/internal/maxclient"
 	"sportslot/internal/repository/postgres"
@@ -73,6 +74,8 @@ func main() {
 	bookings.SetPresenter(presenter)
 	partner.SetPresenter(presenter)
 	chatBot := bot.New(client, store, search, bookings, presenter)
+	geocoder := geocode.New(cfg.DGISCatalogURL, cfg.DGISAPIKey)
+	chatBot.SetGeocoder(geocoder)
 
 	testUsers := map[string]bool{}
 	for _, id := range cfg.TestMaxUserIDs {
@@ -82,6 +85,7 @@ func main() {
 		Search:   search,
 		Bookings: bookings,
 		Partner:  partner,
+		Geocoder: geocoder,
 		Bot:      chatBot,
 		Auth: handler.UserAuth{
 			BotToken:  cfg.MaxBotAPIToken,

@@ -28,6 +28,8 @@ type Config struct {
 	// DGISAPIKey — ключ 2ГИС для матрицы времени в пути; пусто — время оценивается.
 	DGISAPIKey  string
 	DGISBaseURL string
+	// DGISCatalogURL — геокодер 2ГИС (тот же ключ).
+	DGISCatalogURL string
 
 	CatalogPath      string
 	DemoData         bool
@@ -51,6 +53,7 @@ func Load() (*Config, error) {
 		CORSOrigins:      splitList(getEnv("CORS_ORIGINS", "http://localhost:5173")),
 		DGISAPIKey:       os.Getenv("DGIS_API_KEY"),
 		DGISBaseURL:      getEnv("DGIS_ROUTING_URL", "https://routing.api.2gis.com"),
+		DGISCatalogURL:   getEnv("DGIS_CATALOG_URL", "https://catalog.api.2gis.com"),
 		CatalogPath:      getEnv("CATALOG_PATH", "seed-data/rostov_catalog.json"),
 		DemoData:         getEnv("DEMO_DATA", "on") != "off",
 		PartnerDemoCode:  os.Getenv("PARTNER_DEMO_CODE"),

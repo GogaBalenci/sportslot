@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"sportslot/internal/catalog"
+	"sportslot/internal/geocode"
 	"sportslot/internal/model"
 	"sportslot/internal/quiz"
 	"sportslot/internal/routing"
@@ -22,7 +23,9 @@ type API struct {
 	search   *service.SearchService
 	bookings *service.BookingService
 	partner  *service.PartnerService
+	geocoder *geocode.Geocoder
 	logins   *limiter
+	lookups  *limiter
 	now      func() time.Time
 }
 
@@ -205,10 +208,38 @@ func (a *API) Me(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	resp := map[string]interface{}{
 		"user":     map[string]string{"id": user.ID, "name": user.Name},
 		"bookings": views,
-	})
+	}
+	// Последняя точка, которую пользователь отправил боту в чат: в мини-приложении
+	// MAX на телефоне геолокация браузера доступна не всегда.
+	if loc, err := a.bookings.Store().LastLocation(r.Context(), u.MaxUserID, 7*24*time.Hour); err == nil && loc != nil {
+		resp["last_location"] = loc
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// Geocode — координаты адреса в Ростове (геокодер 2ГИС на сервере, ключ не уходит в браузер).
+func (a *API) Geocode(w http.ResponseWriter, r *http.Request) {
+	if !a.lookups.allow(clientIP(r), a.now()) {
+		writeError(w, http.StatusTooManyRequests, "too_many_requests", "Слишком много запросов, подождите минуту")
+		return
+	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if len([]rune(q)) < 3 || len([]rune(q)) > 200 {
+		writeError(w, http.StatusBadRequest, "invalid_query", "Параметр q: адрес от 3 до 200 символов")
+		return
+	}
+	place, err := a.geocoder.Find(r.Context(), q)
+	switch {
+	case err == nil:
+		writeJSON(w, http.StatusOK, place)
+	case errors.Is(err, geocode.ErrNotFound):
+		writeError(w, http.StatusNotFound, "address_not_found", "Адрес в Ростове-на-Дону не найден")
+	default:
+		writeError(w, http.StatusServiceUnavailable, "geocoder_unavailable", "Поиск адреса временно недоступен")
+	}
 }
 
 func (a *API) CreateBooking(w http.ResponseWriter, r *http.Request) {
