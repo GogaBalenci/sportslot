@@ -11,8 +11,9 @@ base_url: "https://sportslot.space"
 # Тестовые учётные записи для ролей, указанных в проверках.
 # user    — заголовок X-MAX-User-ID принимается только для тестовых id из TEST_MAX_USER_IDS;
 #           реальные пользователи мини-приложения авторизуются подписью MAX (Authorization: tma <initData>).
-# partner — администратор студии: код доступа указан на первом слайде презентации,
+# partner — демо-доступ к кабинетам демо-студий: код указан на первом слайде презентации,
 #           токен из /api/v1/partner/login передаётся как "Authorization: Partner <token>".
+#           Администраторы реальных студий входят по подписи MAX после ссылки-приглашения.
 test_accounts:
   - role: "user"
     headers:
@@ -235,6 +236,33 @@ required_checks:
     expected_response:
       content_type: "application/json"
       required_fields: ["token", "expires_at"]
+
+  - name: "Кабинет студии: доступные студии и счётчики"
+    method: GET
+    path: "/api/v1/studio/me"
+    role: "partner"
+    request_params:
+      headers:
+        Authorization: "Partner <token из /api/v1/partner/login>"
+    expected_status: [200, 401]
+    expected_response:
+      content_type: "application/json"
+      required_fields: ["studios", "platform", "demo"]
+
+  - name: "Учебный QR-пропуск: проверка сканера без изменения записей"
+    method: POST
+    path: "/api/v1/studio/checkin"
+    role: "partner"
+    request_params:
+      headers:
+        Authorization: "Partner <token из /api/v1/partner/login>"
+        Content-Type: "application/json"
+      body:
+        code: "SPORTSLOT:000000"
+    expected_status: [200, 401]
+    expected_response:
+      content_type: "application/json"
+      required_fields: ["training", "message"]
 
   - name: "Воронка пилота (агрегаты без персональных данных)"
     method: GET

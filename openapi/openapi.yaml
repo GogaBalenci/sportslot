@@ -26,6 +26,10 @@ tags:
   - name: catalog
   - name: bookings
   - name: partner
+  - name: studio
+    description: Кабинет студии — администратор по подписи MAX, демо-доступ по токену partner
+  - name: platform
+    description: Подключение студий и приглашения — только PLATFORM_ADMIN_IDS
 paths:
   /api/v1/health:
     get:
@@ -458,6 +462,349 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/me/location:
+    post:
+      tags: [bookings]
+      summary: Сохранить геолокацию из мини-приложения; бот продолжает подбор с этой точки
+      security: [{ initData: [] }, { testUser: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lon]
+              properties:
+                lat: { type: number, example: 47.2336 }
+                lon: { type: number, example: 39.6179 }
+                address: { type: string }
+      responses:
+        "200":
+          description: Точка сохранена; sport и when — выбор пользователя в чате, если он есть
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sport: { type: string }
+                  when: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /api/v1/messages:
+    get:
+      tags: [bookings]
+      summary: Переписка пользователя со студией
+      security: [{ initData: [] }, { testUser: [] }]
+      parameters:
+        - { name: venue_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Сообщения по времени
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages: { type: array, items: { $ref: "#/components/schemas/Message" } }
+    post:
+      tags: [bookings]
+      summary: Написать студии; администраторы получают уведомление в бот
+      security: [{ initData: [] }, { testUser: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [venue_id, text]
+              properties:
+                venue_id: { type: string, format: uuid }
+                text: { type: string, maxLength: 2000 }
+      responses:
+        "201":
+          description: Сообщение отправлено
+          content: { application/json: { schema: { $ref: "#/components/schemas/Message" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/studio/invites/accept:
+    post:
+      tags: [studio]
+      summary: Принять ссылку-приглашение и стать администратором студии
+      security: [{ initData: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, pattern: "^[0-9a-f]{32}$" }
+      responses:
+        "200":
+          description: Студия, к которой выдан доступ
+          content: { application/json: { schema: { $ref: "#/components/schemas/Venue" } } }
+        "400": { description: Приглашение недействительно или уже использовано }
+  /api/v1/studio/me:
+    get:
+      tags: [studio]
+      summary: Студии, доступные пользователю, со счётчиками записей и непрочитанных сообщений
+      security: [{ initData: [] }, { partner: [] }]
+      responses:
+        "200":
+          description: Пустой список — пользователь не администратор
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  platform: { type: boolean }
+                  demo: { type: boolean }
+                  studios:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        venue: { $ref: "#/components/schemas/Venue" }
+                        today_bookings: { type: integer }
+                        upcoming_bookings: { type: integer }
+                        unread_messages: { type: integer }
+  /api/v1/studio/checkin:
+    post:
+      tags: [studio]
+      summary: Отметить посещение по QR или коду; код 000000 — учебный пропуск
+      security: [{ initData: [] }, { partner: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, example: "SPORTSLOT:000000" }
+      responses:
+        "200":
+          description: Посещение отмечено или {training:true, message} для учебного пропуска
+          content: { application/json: { schema: { $ref: "#/components/schemas/BookingView" } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Посещение уже отмечено }
+  /api/v1/studio/bookings/{id}:
+    get:
+      tags: [studio]
+      summary: Карточка клиента по записи — история в студии, посещения, неявки, переписка
+      security: [{ initData: [] }, { partner: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200": { description: "{booking, history, visits, no_shows, messages}" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/studio/bookings/{id}/remind:
+    post:
+      tags: [studio]
+      summary: Прислать клиенту напоминание с «Иду / Не смогу» сейчас
+      security: [{ initData: [] }, { partner: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Напоминание отправлено }
+  /api/v1/studio/{venue_id}/bookings:
+    get:
+      tags: [studio]
+      summary: Записи в студию на ближайшую неделю
+      security: [{ initData: [] }, { partner: [] }]
+      parameters: [{ $ref: "#/components/parameters/VenueId" }]
+      responses:
+        "200": { description: "{bookings: BookingView[]}" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/studio/{venue_id}/templates:
+    get:
+      tags: [studio]
+      summary: Недельный шаблон расписания
+      security: [{ initData: [] }, { partner: [] }]
+      parameters: [{ $ref: "#/components/parameters/VenueId" }]
+      responses:
+        "200":
+          description: Шаблоны по дням недели
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates: { type: array, items: { $ref: "#/components/schemas/Template" } }
+    post:
+      tags: [studio]
+      summary: Добавить занятие в шаблон; занятия на 14 дней создаются сразу
+      security: [{ initData: [] }, { partner: [] }]
+      parameters: [{ $ref: "#/components/parameters/VenueId" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/Template" } } }
+      responses:
+        "201": { description: "{template, kept_with_bookings}" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /api/v1/studio/{venue_id}/templates/{template_id}:
+    put:
+      tags: [studio]
+      summary: Изменить занятие шаблона; будущие занятия с записями не переносятся
+      security: [{ initData: [] }, { partner: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/VenueId" }
+        - { name: template_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/Template" } } }
+      responses:
+        "200": { description: "{template, kept_with_bookings}" }
+    delete:
+      tags: [studio]
+      summary: Удалить занятие из шаблона; занятия с записями остаются
+      security: [{ initData: [] }, { partner: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/VenueId" }
+        - { name: template_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: "{kept_with_bookings}" }
+  /api/v1/studio/{venue_id}/slots:
+    get:
+      tags: [studio]
+      summary: Ближайшие занятия студии с числом записей
+      security: [{ initData: [] }, { partner: [] }]
+      parameters: [{ $ref: "#/components/parameters/VenueId" }]
+      responses:
+        "200": { description: "{slots: [{…slot, booked, closed, cancelled}]}" }
+  /api/v1/studio/{venue_id}/slots/{slot_id}/close:
+    post:
+      tags: [studio]
+      summary: Приостановить или возобновить запись на занятие
+      security: [{ initData: [] }, { partner: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/VenueId" }
+        - { name: slot_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { closed: { type: boolean } } }
+      responses:
+        "204": { description: Готово }
+  /api/v1/studio/{venue_id}/slots/{slot_id}/cancel:
+    post:
+      tags: [studio]
+      summary: Отменить занятие; записавшиеся получают сообщение с контактами студии
+      security: [{ initData: [] }, { partner: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/VenueId" }
+        - { name: slot_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: "{notified: число клиентов}" }
+  /api/v1/studio/{venue_id}/stats:
+    get:
+      tags: [studio]
+      summary: Статистика за 30 дней
+      security: [{ initData: [] }, { partner: [] }]
+      parameters: [{ $ref: "#/components/parameters/VenueId" }]
+      responses:
+        "200": { description: "{bookings, attended, no_show, cancelled_by_client, upcoming, clients, returning_clients, rating_avg, ratings}" }
+  /api/v1/studio/{venue_id}/profile:
+    patch:
+      tags: [studio]
+      summary: Телефон, сайт, описание, «что взять», цена пробного занятия
+      security: [{ initData: [] }]
+      parameters: [{ $ref: "#/components/parameters/VenueId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                phone: { type: string }
+                website: { type: string }
+                description: { type: string }
+                what_to_bring: { type: string }
+                trial_price: { type: integer, nullable: true }
+      responses:
+        "200":
+          description: Обновлённая студия
+          content: { application/json: { schema: { $ref: "#/components/schemas/Venue" } } }
+        "403": { description: В демо-доступе профиль только просматривается }
+  /api/v1/studio/{venue_id}/threads:
+    get:
+      tags: [studio]
+      summary: Переписки студии с клиентами
+      security: [{ initData: [] }, { partner: [] }]
+      parameters: [{ $ref: "#/components/parameters/VenueId" }]
+      responses:
+        "200": { description: "{threads: [{user_id, user_name, last_text, last_at, last_by, unread}]}" }
+  /api/v1/studio/{venue_id}/threads/{user_id}:
+    get:
+      tags: [studio]
+      summary: Переписка с клиентом (помечается прочитанной)
+      security: [{ initData: [] }, { partner: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/VenueId" }
+        - { name: user_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: "{user, messages: Message[]}" }
+    post:
+      tags: [studio]
+      summary: Ответить клиенту; ответ приходит ему в чат с ботом
+      security: [{ initData: [] }, { partner: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/VenueId" }
+        - { name: user_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [text], properties: { text: { type: string, maxLength: 2000 } } }
+      responses:
+        "201":
+          description: Ответ отправлен
+          content: { application/json: { schema: { $ref: "#/components/schemas/Message" } } }
+  /api/v1/platform/studios:
+    get:
+      tags: [platform]
+      summary: Студии с онлайн-записью, их администраторы и активные приглашения
+      security: [{ initData: [] }]
+      responses:
+        "200": { description: "{studios: [{venue, admins, invites}]}" }
+        "403": { description: Только для PLATFORM_ADMIN_IDS }
+    post:
+      tags: [platform]
+      summary: Подключить зал из каталога ({venue_id}) или добавить новую студию ({name, address, sports, phone})
+      security: [{ initData: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object } } }
+      responses:
+        "201":
+          description: Подключённая студия
+          content: { application/json: { schema: { $ref: "#/components/schemas/Venue" } } }
+  /api/v1/platform/catalog:
+    get:
+      tags: [platform]
+      summary: Поиск зала в каталоге OSM для подключения
+      security: [{ initData: [] }]
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 2 } }
+      responses:
+        "200": { description: "{venues: Venue[]}" }
+  /api/v1/platform/studios/{venue_id}/invites:
+    post:
+      tags: [platform]
+      summary: Одноразовая ссылка-приглашение администратора студии на 7 дней
+      security: [{ initData: [] }]
+      parameters: [{ $ref: "#/components/parameters/VenueId" }]
+      responses:
+        "201": { description: "{token, link, expires_at}" }
+  /api/v1/platform/studios/{venue_id}/admins/{max_user_id}:
+    delete:
+      tags: [platform]
+      summary: Отозвать доступ администратора
+      security: [{ initData: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/VenueId" }
+        - { name: max_user_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Доступ отозван }
   /bot/webhook:
     post:
       tags: [system]
@@ -487,10 +834,15 @@ components:
       type: apiKey
       in: header
       name: Authorization
-      description: "Partner <token> — токен из POST /api/v1/partner/login"
+      description: "Partner <token> — токен из POST /api/v1/partner/login; открывает кабинеты демо-студий"
   parameters:
     Id:
       name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    VenueId:
+      name: venue_id
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -650,3 +1002,24 @@ components:
             catalog_date: { type: string, format: date-time }
             demo_partners: { type: boolean }
             partner_enabled: { type: boolean }
+    Message:
+      type: object
+      properties:
+        id: { type: integer }
+        venue_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        author: { type: string, enum: [client, studio] }
+        text: { type: string }
+        created_at: { type: string, format: date-time }
+    Template:
+      type: object
+      required: [title, sport_type, weekday, start_minute, duration_min, quota]
+      properties:
+        id: { type: string, format: uuid, readOnly: true }
+        title: { type: string, example: "Йога для начинающих" }
+        sport_type: { type: string, example: yoga }
+        level: { type: string, example: beginner }
+        weekday: { type: integer, minimum: 0, maximum: 6, description: "0 — воскресенье" }
+        start_minute: { type: integer, minimum: 0, maximum: 1439, example: 1140 }
+        duration_min: { type: integer, minimum: 15, maximum: 300, example: 60 }
+        quota: { type: integer, minimum: 1, maximum: 100, example: 4 }
