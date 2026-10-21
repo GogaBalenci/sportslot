@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"sportslot/internal/catalog"
+	"sportslot/internal/routing"
+	"sportslot/internal/service"
 )
 
 func TestDayLabel(t *testing.T) {
@@ -33,5 +35,30 @@ func TestSeatsLabel(t *testing.T) {
 func TestOpeningHours(t *testing.T) {
 	if got := openingHours("Mo-Fr 07:00-22:00; Sa-Su 09:00-20:00"); got != "пн-пт 07:00-22:00, сб-вс 09:00-20:00" {
 		t.Errorf("got %q", got)
+	}
+}
+
+func TestTravelLabel(t *testing.T) {
+	cases := map[string]*service.Travel{
+		"12 мин пешком":          {Mode: routing.Walking, Minutes: 12},
+		"≈ 25 мин на транспорте": {Mode: routing.Transit, Minutes: 25, Estimated: true},
+		"1 ч 05 мин на машине":   {Mode: routing.Driving, Minutes: 65},
+	}
+	for want, tr := range cases {
+		if got := travelLabel(tr); got != want {
+			t.Errorf("travelLabel = %q, want %q", got, want)
+		}
+	}
+}
+
+func TestParseTravel(t *testing.T) {
+	if m, l := parseTravel("на автобусе минут 25"); m != routing.Transit || l != 25 {
+		t.Errorf("got %s %d", m, l)
+	}
+	if m, l := parseTravel("пешком"); m != routing.Walking || l != 15 {
+		t.Errorf("got %s %d", m, l)
+	}
+	if m, _ := parseTravel("как получится"); m != "" {
+		t.Errorf("unexpected mode %s", m)
 	}
 }

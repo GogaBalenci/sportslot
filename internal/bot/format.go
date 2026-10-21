@@ -7,6 +7,7 @@ import (
 
 	"sportslot/internal/catalog"
 	"sportslot/internal/model"
+	"sportslot/internal/service"
 )
 
 var weekdayShort = [...]string{"вс", "пн", "вт", "ср", "чт", "пт", "сб"}
@@ -71,6 +72,19 @@ func distanceLabel(km float64) string {
 		return fmt.Sprintf("%d м", int(km*1000)/50*50)
 	}
 	return strings.Replace(fmt.Sprintf("%.1f км", km), ".", ",", 1)
+}
+
+// travelLabel — «12 мин пешком», «1 ч 05 мин на транспорте»; оценка — со значком «≈».
+func travelLabel(t *service.Travel) string {
+	label := fmt.Sprintf("%d мин", t.Minutes)
+	if t.Minutes >= 60 {
+		label = fmt.Sprintf("%d ч %02d мин", t.Minutes/60, t.Minutes%60)
+	}
+	label += " " + t.Mode.Title()
+	if t.Estimated {
+		label = "≈ " + label
+	}
+	return label
 }
 
 func trialLabel(v *model.Venue) string {

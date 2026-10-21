@@ -15,6 +15,7 @@ import (
 	"sportslot/internal/model"
 	"sportslot/internal/quiz"
 	"sportslot/internal/repository/postgres"
+	"sportslot/internal/routing"
 	"sportslot/internal/service"
 )
 
@@ -39,6 +40,8 @@ type state struct {
 	Lat       float64           `json:"lat,omitempty"`
 	Lon       float64           `json:"lon,omitempty"`
 	HasPoint  bool              `json:"has_point,omitempty"`
+	Mode      string            `json:"mode,omitempty"`
+	Limit     int               `json:"limit,omitempty"`
 	Offset    int               `json:"offset,omitempty"`
 	QuizIndex int               `json:"quiz_index,omitempty"`
 	Answers   map[string]string `json:"answers,omitempty"`
@@ -49,6 +52,7 @@ const (
 	stepQuiz    = "quiz"
 	stepWhen    = "when"
 	stepWhere   = "where"
+	stepTravel  = "travel"
 	stepResults = "results"
 	pageSize    = 3
 )
@@ -103,7 +107,15 @@ func (b *Bot) Handle(ctx context.Context, in Incoming) {
 		b.menu(ctx, in, true)
 	case in.HasLocation:
 		st.HasPoint, st.Lat, st.Lon, st.District = true, in.Lat, in.Lon, ""
-		b.results(ctx, in, st, 0)
+		st.Mode, st.Limit = "", 0
+		if st.Sport == "" {
+			b.save(ctx, in.MaxUserID, st)
+			b.reply(ctx, in, "Запомнил, где ты. Выбери вид спорта — покажу залы рядом.", menuKeyboard())
+			return
+		}
+		st.Step = stepTravel
+		b.save(ctx, in.MaxUserID, st)
+		b.askTravel(ctx, in)
 	case in.Payload != "":
 		b.callback(ctx, in, st)
 	default:
@@ -140,8 +152,16 @@ func (b *Bot) callback(ctx context.Context, in Incoming, st state) {
 		st.When, st.Step = arg, stepWhere
 		b.save(ctx, in.MaxUserID, st)
 		b.askWhere(ctx, in)
+	case "tm":
+		mode, limit, _ := strings.Cut(arg, ":")
+		st.Mode, st.Limit = "", 0
+		if m, ok := routing.ParseMode(mode); ok && st.HasPoint {
+			st.Mode = string(m)
+			st.Limit, _ = strconv.Atoi(limit)
+		}
+		b.results(ctx, in, st, 0)
 	case "d":
-		st.HasPoint, st.District = false, arg
+		st.HasPoint, st.Mode, st.Limit, st.District = false, "", 0, arg
 		if arg == "any" {
 			st.District = ""
 		}
@@ -151,7 +171,7 @@ func (b *Bot) callback(ctx context.Context, in Incoming, st state) {
 	case "res":
 		b.results(ctx, in, st, st.Offset)
 	case "wider":
-		st.When, st.District, st.HasPoint = "any", "", false
+		st.When, st.District, st.HasPoint, st.Mode, st.Limit = "any", "", false, "", 0
 		b.results(ctx, in, st, 0)
 	case "vs":
 		b.venueSlots(ctx, in, arg, st.Sport)
@@ -202,6 +222,14 @@ func (b *Bot) text(ctx context.Context, in Incoming, st state) {
 			return
 		}
 		b.askWhen(ctx, in, "Не разобрал, когда удобно. Выбери вариант:")
+		return
+	case stepTravel:
+		if mode, limit := parseTravel(t); mode != "" {
+			st.Mode, st.Limit = string(mode), limit
+			b.results(ctx, in, st, 0)
+			return
+		}
+		b.askTravel(ctx, in)
 		return
 	case stepWhere:
 		if d, ok := catalog.ParseDistrict(t); ok {
@@ -315,12 +343,53 @@ func whereKeyboard() mc.Keyboard {
 }
 
 func (b *Bot) askWhere(ctx context.Context, in Incoming) {
-	b.reply(ctx, in, "Где удобнее? Отправь геолокацию — покажу ближайшие залы. Или выбери район.", whereKeyboard())
+	b.reply(ctx, in, "Где удобнее? Отправь геолокацию — посчитаю, сколько до каждого зала идти или ехать. Или выбери район.", whereKeyboard())
 }
 
 func (b *Bot) searchQuery(st state) service.VenueSearch {
 	return service.VenueSearch{Sport: st.Sport, When: st.When, District: st.District,
-		Lat: st.Lat, Lon: st.Lon, HasPoint: st.HasPoint}
+		Lat: st.Lat, Lon: st.Lon, HasPoint: st.HasPoint, Mode: routing.Mode(st.Mode), MaxMinutes: st.Limit}
+}
+
+func travelKeyboard() mc.Keyboard {
+	return mc.Keyboard{
+		{mc.Callback("Пешком · до 15 мин", "tm:walking:15")},
+		{mc.Callback("Пешком · до 30 мин", "tm:walking:30")},
+		{mc.Callback("На транспорте · до 20 мин", "tm:transit:20")},
+		{mc.Callback("На транспорте · до 40 мин", "tm:transit:40")},
+		{mc.Callback("На машине · до 20 мин", "tm:driving:20")},
+		{mc.Callback("Время в пути не важно", "tm:any:0")},
+	}
+}
+
+func (b *Bot) askTravel(ctx context.Context, in Incoming) {
+	b.reply(ctx, in, "Как будешь добираться и сколько готов тратить на дорогу? Посчитаю время по реальным маршрутам с учётом транспорта.", travelKeyboard())
+}
+
+// parseTravel понимает ответы вроде «пешком 15» или «на автобусе минут 30».
+func parseTravel(t string) (routing.Mode, int) {
+	var mode routing.Mode
+	switch {
+	case strings.Contains(t, "пешк") || strings.Contains(t, "ногами"):
+		mode = routing.Walking
+	case strings.Contains(t, "транспорт") || strings.Contains(t, "автобус") || strings.Contains(t, "трамва") || strings.Contains(t, "маршрутк"):
+		mode = routing.Transit
+	case strings.Contains(t, "машин") || strings.Contains(t, "авто") || strings.Contains(t, "такси"):
+		mode = routing.Driving
+	default:
+		return "", 0
+	}
+	limit := 0
+	for _, f := range strings.FieldsFunc(t, func(r rune) bool { return r < '0' || r > '9' }) {
+		if n, err := strconv.Atoi(f); err == nil && n > 0 && n <= 120 {
+			limit = n
+			break
+		}
+	}
+	if limit == 0 {
+		limit = map[routing.Mode]int{routing.Walking: 15, routing.Transit: 20, routing.Driving: 20}[mode]
+	}
+	return mode, limit
 }
 
 func (b *Bot) results(ctx context.Context, in Incoming, st state, offset int) {
@@ -341,15 +410,13 @@ func (b *Bot) results(ctx context.Context, in Incoming, st state, offset int) {
 	b.save(ctx, in.MaxUserID, st)
 	if offset == 0 {
 		b.bookings.LogEvent(ctx, in.MaxUserID, "search", map[string]interface{}{
-			"sport": st.Sport, "when": st.When, "district": st.District, "geo": st.HasPoint, "found": len(cards)})
+			"sport": st.Sport, "when": st.When, "district": st.District, "geo": st.HasPoint,
+			"mode": st.Mode, "limit": st.Limit, "found": len(cards)})
 	}
 
 	if len(cards) == 0 {
 		b.reply(ctx, in, fmt.Sprintf("По запросу «%s, %s» ничего не нашлось.", strings.ToLower(catalog.SportTitle(st.Sport)),
-			strings.ToLower(catalog.WhenTitle(st.When))), mc.Keyboard{
-			{mc.Callback("Искать в любое время и по всему городу", "wider")},
-			{mc.Callback("Другой вид спорта", "menu")},
-		})
+			strings.ToLower(catalog.WhenTitle(st.When))), emptyKeyboard(st))
 		return
 	}
 	if offset >= len(cards) {
@@ -381,9 +448,27 @@ func (b *Bot) results(ctx context.Context, in Incoming, st state, offset int) {
 	b.reply(ctx, in, "Что дальше?", footer)
 }
 
+func emptyKeyboard(st state) mc.Keyboard {
+	kb := mc.Keyboard{}
+	if st.HasPoint && st.Mode != "" && st.Limit > 0 && st.Limit < 60 {
+		more := st.Limit * 2
+		if more > 60 {
+			more = 60
+		}
+		mode := routing.Mode(st.Mode)
+		kb = append(kb, []mc.Button{mc.Callback(fmt.Sprintf("Искать до %d мин %s", more, mode.Title()), fmt.Sprintf("tm:%s:%d", mode, more))})
+	}
+	return append(kb,
+		[]mc.Button{mc.Callback("Искать в любое время и по всему городу", "wider")},
+		[]mc.Button{mc.Callback("Другой вид спорта", "menu")},
+	)
+}
+
 func resultsHeader(st state, cards []service.VenueCard) string {
 	where := "по всему городу"
 	switch {
+	case st.HasPoint && st.Mode != "" && st.Limit > 0:
+		where = fmt.Sprintf("рядом с тобой — до %d мин %s", st.Limit, routing.Mode(st.Mode).Title())
 	case st.HasPoint:
 		where = "рядом с тобой"
 	case st.District != "":
@@ -415,7 +500,11 @@ func (b *Bot) card(c service.VenueCard, st state) (string, mc.Keyboard) {
 	if dt := districtTitle(v.District); dt != "" {
 		place = append(place, dt)
 	}
-	place = append(place, distanceLabel(c.DistanceKM))
+	if c.Travel != nil {
+		place = append(place, travelLabel(c.Travel))
+	} else {
+		place = append(place, distanceLabel(c.DistanceKM))
+	}
 	t.WriteString(strings.Join(place, " · "))
 	if v.Address != "" {
 		t.WriteString("\n" + v.Address)
