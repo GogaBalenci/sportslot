@@ -103,7 +103,9 @@ type attachment struct {
 }
 
 type newMessageBody struct {
-	Text        string       `json:"text,omitempty"`
+	Text string `json:"text,omitempty"`
+	// Format — разметка текста; бот пишет в HTML (жирный, курсив, цитаты).
+	Format      string       `json:"format,omitempty"`
 	Attachments []attachment `json:"attachments,omitempty"`
 }
 
@@ -137,6 +139,9 @@ func (c *Client) SendLocation(ctx context.Context, maxUserID string, lat, lon fl
 
 func (c *Client) buildMessage(ctx context.Context, text string, kb Keyboard, allowOpenApp bool) (newMessageBody, bool) {
 	msg := newMessageBody{Text: text}
+	if text != "" {
+		msg.Format = "html"
+	}
 	hasOpenApp := false
 	var rows [][]apiButton
 	for _, row := range kb {

@@ -11,6 +11,7 @@ import (
 )
 
 // Presenter отправляет сообщения о записях: реализует service.Presenter.
+// Тексты — в HTML-разметке MAX, всё пользовательское экранируется.
 type Presenter struct {
 	client *mc.Client
 	now    func() time.Time
@@ -27,36 +28,38 @@ func codeLabel(code string) string {
 	return code
 }
 
+// slotLine — блок «что, когда, где» для подтверждений и списка записей.
 func slotLine(v *model.BookingView) string {
-	return fmt.Sprintf("%s\n%s, %s–%s\n%s, %s", v.Slot.Title, fullDate(v.Slot.StartAt), clock(v.Slot.StartAt),
-		clock(v.Slot.EndAt), v.Venue.Name, v.Venue.Address)
+	return fmt.Sprintf("<b>%s</b>\n🗓 %s · %s–%s\n📍 %s, %s",
+		esc(v.Slot.Title), fullDate(v.Slot.StartAt), clock(v.Slot.StartAt), clock(v.Slot.EndAt),
+		esc(v.Venue.Name), esc(v.Venue.Address))
 }
 
-func bookingKeyboard(v *model.BookingView) mc.Keyboard {
+func bookingKeyboard(v *model.BookingView, from *Origin) mc.Keyboard {
 	return mc.Keyboard{
 		{mc.OpenApp("QR-пропуск", "ticket_"+v.ID)},
 		{mc.Callback("Перенести", "rs:"+v.ID), mc.Callback("Отменить", "cx:"+v.ID)},
-		{mc.Link("Как добраться", routeURL(v.Venue.Lat, v.Venue.Lon))},
+		{mc.Link("Как добраться", routeURL(from, v.Venue.Lat, v.Venue.Lon))},
 	}
 }
 
 func confirmationText(v *model.BookingView, created bool) string {
 	var b strings.Builder
 	if created {
-		b.WriteString("Записал тебя на пробное занятие.\n\n")
+		b.WriteString("✅ <b>Ты записан на пробное занятие!</b>\n\n")
 	} else {
-		b.WriteString("Ты уже записан на это занятие.\n\n")
+		b.WriteString("👌 <b>Ты уже записан на это занятие</b>\n\n")
 	}
 	b.WriteString(slotLine(v))
 	if trial := trialLabel(&v.Venue); trial != "" {
-		b.WriteString("\n" + trial)
+		b.WriteString("\n🎁 " + trial)
 	}
 	if v.Venue.WhatToBring != "" {
-		b.WriteString("\n\nЧто взять: " + lowerFirst(v.Venue.WhatToBring))
+		b.WriteString("\n\n<blockquote>Что взять: " + esc(lowerFirst(v.Venue.WhatToBring)) + "</blockquote>")
 	}
-	fmt.Fprintf(&b, "\n\nКод входа: %s. На входе покажи QR-пропуск или назови код администратору.", codeLabel(v.CheckinCode))
+	fmt.Fprintf(&b, "\n🎟 Код входа: <b>%s</b>\nПокажи QR-пропуск или назови код администратору.", codeLabel(v.CheckinCode))
 	if created {
-		b.WriteString("\n\nНапомню за сутки и за два часа до начала.")
+		b.WriteString("\n\n<i>Напомню за сутки и за 2 часа до начала.</i>")
 	}
 	return b.String()
 }
@@ -70,8 +73,8 @@ func lowerFirst(s string) string {
 }
 
 // SendConfirmation — подтверждение записи и точка на карте отдельным сообщением.
-func (p *Presenter) SendConfirmation(ctx context.Context, v *model.BookingView, created bool) error {
-	if err := p.client.SendMessage(ctx, v.MaxUserID, confirmationText(v, created), bookingKeyboard(v)); err != nil {
+func (p *Presenter) SendConfirmation(ctx context.Context, v *model.BookingView, created bool, from *Origin) error {
+	if err := p.client.SendMessage(ctx, v.MaxUserID, confirmationText(v, created), bookingKeyboard(v, from)); err != nil {
 		return err
 	}
 	if created {
@@ -82,33 +85,33 @@ func (p *Presenter) SendConfirmation(ctx context.Context, v *model.BookingView, 
 }
 
 func (p *Presenter) Reminder24h(ctx context.Context, v *model.BookingView) error {
-	text := fmt.Sprintf("%s в %s — %s, %s.\n\nПридёшь? Если планы поменялись, отмени запись: место достанется тому, кто ждёт в очереди.",
-		upperFirst(dayLabel(v.Slot.StartAt, p.now())), clock(v.Slot.StartAt), strings.ToLower(v.Slot.Title), v.Venue.Name)
+	text := fmt.Sprintf("⏰ <b>%s в %s — тренировка</b>\n\n%s\n📍 %s, %s\n\nПридёшь? Если планы поменялись, отмени запись — место достанется тому, кто ждёт в очереди.",
+		upperFirst(dayLabel(v.Slot.StartAt, p.now())), clock(v.Slot.StartAt), esc(v.Slot.Title), esc(v.Venue.Name), esc(v.Venue.Address))
 	return p.client.SendMessage(ctx, v.MaxUserID, text, mc.Keyboard{
 		{mc.Callback("Иду", "go:"+v.ID), mc.Callback("Не смогу", "no:"+v.ID)},
 	})
 }
 
 func (p *Presenter) Reminder2h(ctx context.Context, v *model.BookingView) error {
-	text := fmt.Sprintf("Через два часа тренировка: %s в %s.\n\n%s, %s\nКод входа: %s",
-		strings.ToLower(v.Slot.Title), clock(v.Slot.StartAt), v.Venue.Name, v.Venue.Address, codeLabel(v.CheckinCode))
+	text := fmt.Sprintf("🏁 <b>Через 2 часа тренировка</b>\n\n%s в %s\n📍 %s, %s\n🎟 Код входа: <b>%s</b>",
+		esc(v.Slot.Title), clock(v.Slot.StartAt), esc(v.Venue.Name), esc(v.Venue.Address), codeLabel(v.CheckinCode))
 	return p.client.SendMessage(ctx, v.MaxUserID, text, mc.Keyboard{
-		{mc.OpenApp("QR-пропуск", "ticket_"+v.ID), mc.Link("Как добраться", routeURL(v.Venue.Lat, v.Venue.Lon))},
+		{mc.OpenApp("QR-пропуск", "ticket_"+v.ID), mc.Link("Как добраться", routeURL(nil, v.Venue.Lat, v.Venue.Lon))},
 		{mc.Callback("Не смогу", "no:"+v.ID)},
 	})
 }
 
 func (p *Presenter) AskFeedback(ctx context.Context, v *model.BookingView) error {
-	text := fmt.Sprintf("Отметили посещение: %s, %s. Как прошло первое занятие?", strings.ToLower(v.Slot.Title), v.Venue.Name)
+	text := fmt.Sprintf("🙌 <b>Посещение отмечено</b>\n%s, %s\n\nКак прошло первое занятие? Оцени от 1 до 5.", esc(v.Slot.Title), esc(v.Venue.Name))
 	row := make([]mc.Button, 0, 5)
 	for i := 1; i <= 5; i++ {
 		row = append(row, mc.Callback(fmt.Sprint(i), fmt.Sprintf("rt:%s:%d", v.ID, i)))
 	}
-	return p.client.SendMessage(ctx, v.MaxUserID, text+"\n\nОцени от 1 до 5.", mc.Keyboard{row})
+	return p.client.SendMessage(ctx, v.MaxUserID, text, mc.Keyboard{row})
 }
 
 func (p *Presenter) Promoted(ctx context.Context, v *model.BookingView) error {
-	text := fmt.Sprintf("Освободилось место, и я записал тебя из листа ожидания.\n\n%s\n\nКод входа: %s. Если не получается прийти — отмени запись, место уйдёт следующему.",
+	text := fmt.Sprintf("🎉 <b>Освободилось место — ты записан из листа ожидания</b>\n\n%s\n\n🎟 Код входа: <b>%s</b>\n<i>Если не получается прийти — отмени запись, место уйдёт следующему.</i>",
 		slotLine(v), codeLabel(v.CheckinCode))
-	return p.client.SendMessage(ctx, v.MaxUserID, text, bookingKeyboard(v))
+	return p.client.SendMessage(ctx, v.MaxUserID, text, bookingKeyboard(v, nil))
 }

@@ -33,8 +33,17 @@ func TestSeatsLabel(t *testing.T) {
 }
 
 func TestOpeningHours(t *testing.T) {
-	if got := openingHours("Mo-Fr 07:00-22:00; Sa-Su 09:00-20:00"); got != "пн-пт 07:00-22:00, сб-вс 09:00-20:00" {
-		t.Errorf("got %q", got)
+	cases := map[string]string{
+		"Mo-Fr 07:00-22:00; Sa-Su 09:00-20:00":          "пн–пт 07:00–22:00; сб, вс 09:00–20:00",
+		"Mo,We,Fr 11:00-22:00; Tu,Th,Sa 11:00-22:00":    "пн–сб 11:00–22:00",
+		"Mo,We 10:00-20:00; Tu 09:00-12:00,14:00-18:00": "пн, ср 10:00–20:00; вт 09:00–12:00, 14:00–18:00",
+		"Mo-Su 08:00-23:00; PH off":                     "пн–вс 08:00–23:00",
+		"24/7":                                          "круглосуточно",
+	}
+	for in, want := range cases {
+		if got := openingHours(in); got != want {
+			t.Errorf("openingHours(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 
@@ -60,5 +69,29 @@ func TestParseTravel(t *testing.T) {
 	}
 	if m, _ := parseTravel("как получится"); m != "" {
 		t.Errorf("unexpected mode %s", m)
+	}
+}
+
+func TestPhoneLabel(t *testing.T) {
+	cases := map[string]string{
+		"29 61 0 61":                      "+7 863 296-10-61",
+		"+7 (863) 201-02-03":              "+7 863 201-02-03",
+		"8 918 555-44-33; +7 863 2000000": "+7 918 555-44-33",
+		"доб. 12":                         "доб. 12",
+	}
+	for in, want := range cases {
+		if got := phoneLabel(in); got != want {
+			t.Errorf("phoneLabel(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestRouteURL(t *testing.T) {
+	if got := routeURL(nil, 47.1, 39.2); got != "https://yandex.ru/maps/?rtext=~47.100000,39.200000&rtt=auto" {
+		t.Errorf("got %q", got)
+	}
+	got := routeURL(&Origin{Lat: 47.2, Lon: 39.7, Mode: routing.Walking}, 47.1, 39.2)
+	if got != "https://yandex.ru/maps/?rtext=47.200000,39.700000~47.100000,39.200000&rtt=pd" {
+		t.Errorf("got %q", got)
 	}
 }

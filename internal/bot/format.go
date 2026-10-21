@@ -2,11 +2,13 @@ package bot
 
 import (
 	"fmt"
+	"html"
 	"strings"
 	"time"
 
 	"sportslot/internal/catalog"
 	"sportslot/internal/model"
+	"sportslot/internal/routing"
 	"sportslot/internal/service"
 )
 
@@ -107,13 +109,165 @@ func districtTitle(id string) string {
 var osmDays = strings.NewReplacer("Mo", "пн", "Tu", "вт", "We", "ср", "Th", "чт", "Fr", "пт", "Sa", "сб", "Su", "вс",
 	"PH", "праздники", "off", "выходной", "24/7", "круглосуточно", ";", ",")
 
-// openingHours переводит формат OpenStreetMap («Mo-Fr 07:00-22:00») на русский.
+var osmDayIndex = map[string]int{"Mo": 0, "Tu": 1, "We": 2, "Th": 3, "Fr": 4, "Sa": 5, "Su": 6}
+var ruDays = [7]string{"пн", "вт", "ср", "чт", "пт", "сб", "вс"}
+
+// openingHours переводит часы работы OpenStreetMap на русский и склеивает дни
+// с одинаковым временем: «Mo,We,Fr 11:00-22:00; Tu,Th,Sa 11:00-22:00» →
+// «пн–сб 11:00–22:00». Непонятный формат переводится как есть.
 func openingHours(raw string) string {
-	return osmDays.Replace(raw)
+	raw = strings.TrimSpace(raw)
+	if raw == "24/7" {
+		return "круглосуточно"
+	}
+	var hours [7]string
+	for _, rule := range strings.Split(raw, ";") {
+		rule = strings.TrimSpace(rule)
+		// Праздничные дни в карточке не показываем.
+		if rule == "" || strings.HasPrefix(rule, "PH") {
+			continue
+		}
+		daysPart, timePart, ok := strings.Cut(rule, " ")
+		days, okDays := expandDays(daysPart)
+		if !ok || !okDays {
+			return osmDays.Replace(raw)
+		}
+		timePart = strings.TrimSpace(timePart)
+		text := strings.ReplaceAll(strings.ReplaceAll(timePart, "-", "–"), ",", ", ")
+		if timePart == "off" || timePart == "closed" {
+			text = "выходной"
+		}
+		for _, d := range days {
+			hours[d] = text
+		}
+	}
+	var order []string
+	groups := map[string][]string{}
+	for i := 0; i < 7; {
+		if hours[i] == "" {
+			i++
+			continue
+		}
+		j := i
+		for j+1 < 7 && hours[j+1] == hours[i] {
+			j++
+		}
+		label := ruDays[i]
+		switch j - i {
+		case 0:
+		case 1:
+			label += ", " + ruDays[j]
+		default:
+			label += "–" + ruDays[j]
+		}
+		if _, seen := groups[hours[i]]; !seen {
+			order = append(order, hours[i])
+		}
+		groups[hours[i]] = append(groups[hours[i]], label)
+		i = j + 1
+	}
+	if len(order) == 0 {
+		return osmDays.Replace(raw)
+	}
+	parts := make([]string, 0, len(order))
+	for _, h := range order {
+		parts = append(parts, strings.Join(groups[h], ", ")+" "+h)
+	}
+	return strings.Join(parts, "; ")
 }
 
-func routeURL(lat, lon float64) string {
-	return fmt.Sprintf("https://yandex.ru/maps/?rtext=~%.6f,%.6f&rtt=auto", lat, lon)
+func expandDays(spec string) ([]int, bool) {
+	var days []int
+	for _, part := range strings.Split(spec, ",") {
+		from, to, isRange := strings.Cut(part, "-")
+		a, okA := osmDayIndex[from]
+		if !okA {
+			return nil, false
+		}
+		if !isRange {
+			days = append(days, a)
+			continue
+		}
+		b, okB := osmDayIndex[to]
+		if !okB {
+			return nil, false
+		}
+		for d := a; ; d = (d + 1) % 7 {
+			days = append(days, d)
+			if d == b {
+				break
+			}
+		}
+	}
+	return days, true
+}
+
+// phoneLabel приводит номер к виду «+7 863 296-10-61». Короткие номера без
+// кода в OpenStreetMap — ростовские, к ним добавляется код 863.
+func phoneLabel(raw string) string {
+	first, _, _ := strings.Cut(raw, ";")
+	var digits []byte
+	for i := 0; i < len(first); i++ {
+		if first[i] >= '0' && first[i] <= '9' {
+			digits = append(digits, first[i])
+		}
+	}
+	d := string(digits)
+	switch {
+	case len(d) == 7:
+		d = "7863" + d
+	case len(d) == 10:
+		d = "7" + d
+	case len(d) == 11 && d[0] == '8':
+		d = "7" + d[1:]
+	}
+	if len(d) != 11 || d[0] != '7' {
+		return strings.TrimSpace(first)
+	}
+	if d[1:4] == "863" {
+		return fmt.Sprintf("+7 863 %s-%s-%s", d[4:7], d[7:9], d[9:11])
+	}
+	return fmt.Sprintf("+7 %s %s-%s-%s", d[1:4], d[4:7], d[7:9], d[9:11])
+}
+
+// Origin — откуда пользователь добирается; нужна, чтобы маршрут открывался
+// сразу с точкой старта и нужным способом передвижения.
+type Origin struct {
+	Lat, Lon float64
+	Mode     routing.Mode
+}
+
+func originOf(st state) *Origin {
+	if !st.HasPoint {
+		return nil
+	}
+	return &Origin{Lat: st.Lat, Lon: st.Lon, Mode: routing.Mode(st.Mode)}
+}
+
+// routeURL — маршрут в Яндекс Картах. С известной точкой старта карта не
+// спрашивает, откуда строить маршрут.
+func routeURL(from *Origin, lat, lon float64) string {
+	if from == nil {
+		return fmt.Sprintf("https://yandex.ru/maps/?rtext=~%.6f,%.6f&rtt=auto", lat, lon)
+	}
+	rtt := map[routing.Mode]string{routing.Walking: "pd", routing.Transit: "mt", routing.Driving: "auto"}[from.Mode]
+	if rtt == "" {
+		rtt = "mt"
+	}
+	return fmt.Sprintf("https://yandex.ru/maps/?rtext=%.6f,%.6f~%.6f,%.6f&rtt=%s", from.Lat, from.Lon, lat, lon, rtt)
+}
+
+// esc экранирует текст для HTML-разметки сообщений MAX.
+func esc(s string) string { return html.EscapeString(s) }
+
+func modeIcon(m routing.Mode) string {
+	switch m {
+	case routing.Walking:
+		return "🚶"
+	case routing.Driving:
+		return "🚗"
+	}
+	return "🚌"
 }
 
 func accessLabel(v *model.Venue) string {

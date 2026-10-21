@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"sportslot/internal/catalog"
+	"sportslot/internal/geocode"
 	mc "sportslot/internal/maxclient"
 	"sportslot/internal/model"
 	"sportslot/internal/quiz"
@@ -40,6 +41,7 @@ type state struct {
 	Lat       float64           `json:"lat,omitempty"`
 	Lon       float64           `json:"lon,omitempty"`
 	HasPoint  bool              `json:"has_point,omitempty"`
+	Address   string            `json:"address,omitempty"`
 	Mode      string            `json:"mode,omitempty"`
 	Limit     int               `json:"limit,omitempty"`
 	Offset    int               `json:"offset,omitempty"`
@@ -63,8 +65,12 @@ type Bot struct {
 	search    *service.SearchService
 	bookings  *service.BookingService
 	presenter *Presenter
+	geocoder  *geocode.Geocoder
 	now       func() time.Time
 }
+
+// SetGeocoder включает поиск по адресу, который пользователь пишет текстом.
+func (b *Bot) SetGeocoder(g *geocode.Geocoder) { b.geocoder = g }
 
 func New(client *mc.Client, store *postgres.Store, search *service.SearchService,
 	bookings *service.BookingService, presenter *Presenter) *Bot {
@@ -107,7 +113,11 @@ func (b *Bot) Handle(ctx context.Context, in Incoming) {
 		b.menu(ctx, in, true)
 	case in.HasLocation:
 		st.HasPoint, st.Lat, st.Lon, st.District = true, in.Lat, in.Lon, ""
+		st.Address = ""
 		st.Mode, st.Limit = "", 0
+		if err := b.store.SaveLocation(ctx, in.MaxUserID, in.Lat, in.Lon, ""); err != nil {
+			log.Printf("bot: save location: %v", err)
+		}
 		if st.Sport == "" {
 			b.save(ctx, in.MaxUserID, st)
 			b.reply(ctx, in, "Запомнил, где ты. Выбери вид спорта — покажу залы рядом.", menuKeyboard())
@@ -176,7 +186,7 @@ func (b *Bot) callback(ctx context.Context, in Incoming, st state) {
 	case "vs":
 		b.venueSlots(ctx, in, arg, st.Sport)
 	case "bk":
-		b.book(ctx, in, arg)
+		b.book(ctx, in, st, arg)
 	case "wl":
 		b.waitlist(ctx, in, arg)
 	case "cx":
@@ -237,7 +247,7 @@ func (b *Bot) text(ctx context.Context, in Incoming, st state) {
 			b.results(ctx, in, st, 0)
 			return
 		}
-		b.reply(ctx, in, "Не нашёл такой район Ростова. Выбери из списка или отправь геолокацию.", whereKeyboard())
+		b.addressSearch(ctx, in, st, in.Text)
 		return
 	}
 
@@ -288,26 +298,27 @@ func menuKeyboard() mc.Keyboard {
 
 func (b *Bot) menu(ctx context.Context, in Incoming, greet bool) {
 	b.save(ctx, in.MaxUserID, state{Step: stepMenu})
-	text := "Чем хочешь заняться?"
+	text := "<b>Чем хочешь заняться?</b>\nВыбери вид спорта или пройди подбор."
 	if greet {
 		name := strings.Fields(in.Name)
 		hello := "Привет!"
 		if len(name) > 0 {
-			hello = "Привет, " + name[0] + "!"
+			hello = "Привет, " + esc(name[0]) + "!"
 		}
-		text = hello + " Я помогу записаться на пробную тренировку рядом с домом в Ростове и не пропустить её.\n\n" +
-			"Выбери вид спорта или ответь на пять вопросов — подскажу, с чего начать."
+		text = "👋 <b>" + hello + "</b>\n\nПомогу записаться на пробную тренировку рядом с домом в Ростове и не пропустить её.\n\n" +
+			"🏋️ Выбери вид спорта\n✨ или ответь на 5 вопросов — подскажу, с чего начать"
 		b.bookings.LogEvent(ctx, in.MaxUserID, "start", nil)
 	}
 	b.reply(ctx, in, text, menuKeyboard())
 }
 
 func (b *Bot) help(ctx context.Context, in Incoming) {
-	text := "Как это работает:\n\n" +
-		"1. Выбираешь вид спорта, время и район — или проходишь подбор, если не знаешь, с чего начать.\n" +
-		"2. Я показываю ближайшие залы. У партнёров СпортСлота можно записаться прямо здесь, по остальным даю контакты и маршрут.\n" +
-		"3. После записи приходит код входа и QR-пропуск, за сутки и за два часа — напоминания.\n\n" +
-		"Команды: /start — начать заново, /my — мои записи."
+	text := "<b>Как это работает</b>\n\n" +
+		"1️⃣ Выбираешь вид спорта и время — или проходишь подбор, если не знаешь, с чего начать.\n" +
+		"2️⃣ Отправляешь геолокацию или адрес — считаю время в пути до каждого зала.\n" +
+		"3️⃣ У партнёров СпортСлота записываешься прямо здесь, по остальным залам даю контакты и маршрут.\n" +
+		"4️⃣ Получаешь код входа и QR-пропуск, за сутки и за 2 часа — напоминания.\n\n" +
+		"<i>Команды: /start — начать заново, /my — мои записи.</i>"
 	b.reply(ctx, in, text, mc.Keyboard{{mc.Callback("Подобрать тренировку", "menu")}})
 }
 
@@ -318,7 +329,7 @@ func (b *Bot) chooseSport(ctx context.Context, in Incoming, sport string) {
 	}
 	st := state{Step: stepWhen, Sport: sport}
 	b.save(ctx, in.MaxUserID, st)
-	b.askWhen(ctx, in, fmt.Sprintf("%s — отличный выбор. Когда удобно заниматься?", catalog.SportTitle(sport)))
+	b.askWhen(ctx, in, fmt.Sprintf("<b>%s</b> — отличный выбор!\n\n🗓 Когда удобно заниматься?", catalog.SportTitle(sport)))
 }
 
 func (b *Bot) askWhen(ctx context.Context, in Incoming, text string) {
@@ -343,7 +354,8 @@ func whereKeyboard() mc.Keyboard {
 }
 
 func (b *Bot) askWhere(ctx context.Context, in Incoming) {
-	b.reply(ctx, in, "Где удобнее? Отправь геолокацию — посчитаю, сколько до каждого зала идти или ехать. Или выбери район.", whereKeyboard())
+	b.reply(ctx, in, "📍 <b>Откуда будешь добираться?</b>\n\nОтправь геолокацию — посчитаю время в пути до каждого зала. Или выбери район.\n\n"+
+		"<i>На компьютере кнопка геолокации может не работать — просто напиши адрес, например «Большая Садовая, 1».</i>", whereKeyboard())
 }
 
 func (b *Bot) searchQuery(st state) service.VenueSearch {
@@ -363,7 +375,7 @@ func travelKeyboard() mc.Keyboard {
 }
 
 func (b *Bot) askTravel(ctx context.Context, in Incoming) {
-	b.reply(ctx, in, "Как будешь добираться и сколько готов тратить на дорогу? Посчитаю время по реальным маршрутам с учётом транспорта.", travelKeyboard())
+	b.reply(ctx, in, "🧭 <b>Как будешь добираться?</b>\n\nВыбери способ и сколько готов тратить на дорогу — посчитаю время по реальным маршрутам с учётом общественного транспорта.", travelKeyboard())
 }
 
 // parseTravel понимает ответы вроде «пешком 15» или «на автобусе минут 30».
@@ -415,7 +427,7 @@ func (b *Bot) results(ctx context.Context, in Incoming, st state, offset int) {
 	}
 
 	if len(cards) == 0 {
-		b.reply(ctx, in, fmt.Sprintf("По запросу «%s, %s» ничего не нашлось.", strings.ToLower(catalog.SportTitle(st.Sport)),
+		b.reply(ctx, in, fmt.Sprintf("🔍 <b>Ничего не нашлось</b>\nПо запросу «%s, %s» сейчас нет вариантов.", strings.ToLower(catalog.SportTitle(st.Sport)),
 			strings.ToLower(catalog.WhenTitle(st.When))), emptyKeyboard(st))
 		return
 	}
@@ -482,47 +494,74 @@ func resultsHeader(st state, cards []service.VenueCard) string {
 			bookable++
 		}
 	}
-	text := fmt.Sprintf("%s, %s, %s.", catalog.SportTitle(st.Sport), strings.ToLower(catalog.WhenTitle(st.When)), where)
+	beyond := 0
+	for _, c := range cards {
+		if c.BeyondLimit {
+			beyond++
+		}
+	}
+	text := fmt.Sprintf("🔍 <b>%s · %s</b>\n%s", catalog.SportTitle(st.Sport), strings.ToLower(catalog.WhenTitle(st.When)), upperFirst(where))
+	if st.Address != "" {
+		text += "\n📍 от адреса " + esc(st.Address)
+	}
 	if bookable > 0 {
-		text += fmt.Sprintf("\n\nЗаписаться прямо здесь можно в %d %s, в остальных залах запись напрямую — дам контакты и маршрут.",
+		text += fmt.Sprintf("\n\n⚡ Записаться прямо здесь можно в <b>%d %s</b>, в остальных залах — напрямую, дам контакты и маршрут.",
 			bookable, plural(bookable, "студию", "студии", "студий"))
 	} else {
 		text += "\n\nСвободных мест с онлайн-записью на это время нет — вот залы, где можно записаться напрямую."
+	}
+	if beyond > 0 && beyond < len(cards) {
+		text += fmt.Sprintf("\n\n<i>В пределах %d мин нашлось немного — в конце добавил залы чуть дальше.</i>", st.Limit)
+	} else if beyond > 0 {
+		text += fmt.Sprintf("\n\n<i>В пределах %d мин ничего нет — показываю ближайшие залы чуть дальше.</i>", st.Limit)
 	}
 	return text
 }
 
 func (b *Bot) card(c service.VenueCard, st state) (string, mc.Keyboard) {
 	v := c.Venue
+	from := originOf(st)
 	var t strings.Builder
-	t.WriteString(v.Name + "\n" + accessLabel(&v) + "\n\n")
+	t.WriteString("<b>" + esc(v.Name) + "</b>\n")
+	if v.BookingMode == model.BookingModeInstant {
+		t.WriteString("⚡ <i>Онлайн-запись через СпортСлот</i>\n")
+	} else {
+		t.WriteString("<i>Запись напрямую в зале</i>\n")
+	}
+	if c.BeyondLimit {
+		t.WriteString("<i>Чуть дальше выбранного времени</i>\n")
+	}
+	t.WriteString("\n")
+
 	place := []string{}
 	if dt := districtTitle(v.District); dt != "" {
 		place = append(place, dt)
 	}
-	if c.Travel != nil {
-		place = append(place, travelLabel(c.Travel))
-	} else {
-		place = append(place, distanceLabel(c.DistanceKM))
-	}
-	t.WriteString(strings.Join(place, " · "))
 	if v.Address != "" {
-		t.WriteString("\n" + v.Address)
+		place = append(place, esc(v.Address))
+	}
+	if len(place) > 0 {
+		t.WriteString("📍 " + strings.Join(place, " · ") + "\n")
+	}
+	if c.Travel != nil {
+		t.WriteString(modeIcon(c.Travel.Mode) + " <b>" + travelLabel(c.Travel) + "</b>\n")
+	} else {
+		t.WriteString("📏 " + distanceLabel(c.DistanceKM) + "\n")
 	}
 
 	if v.BookingMode == model.BookingModeInstant {
 		if trial := trialLabel(&v); trial != "" {
-			t.WriteString("\n" + trial)
+			t.WriteString("🎁 " + trial + "\n")
 		}
-		t.WriteString("\n\nБлижайшие занятия:")
+		t.WriteString("\n<b>Ближайшие занятия</b>")
 		var row []mc.Button
 		shown := 0
 		for _, sl := range c.Slots {
 			if shown == 3 {
 				break
 			}
-			fmt.Fprintf(&t, "\n· %s, %s — %s, %s", dayLabel(sl.StartAt, b.now()), clock(sl.StartAt),
-				strings.ToLower(sl.Title), seatsLabel(sl.QuotaAvailable))
+			fmt.Fprintf(&t, "\n▫️ %s, %s — %s · <i>%s</i>", upperFirst(dayLabel(sl.StartAt, b.now())), clock(sl.StartAt),
+				esc(lowerFirst(sl.Title)), seatsLabel(sl.QuotaAvailable))
 			if sl.QuotaAvailable > 0 {
 				row = append(row, mc.Callback(buttonTime(sl.StartAt), "bk:"+sl.SlotID))
 			} else {
@@ -534,18 +573,21 @@ func (b *Bot) card(c service.VenueCard, st state) (string, mc.Keyboard) {
 		for _, btn := range row {
 			kb = append(kb, []mc.Button{btn})
 		}
-		kb = append(kb, []mc.Button{mc.Callback("Другое время", "vs:"+v.ID), mc.OpenApp("Подробнее", "venue_"+v.ID)})
+		kb = append(kb,
+			[]mc.Button{mc.Callback("Другое время", "vs:"+v.ID), mc.OpenApp("Подробнее", "venue_"+v.ID)},
+			[]mc.Button{mc.Link("Маршрут", routeURL(from, v.Lat, v.Lon))},
+		)
 		return t.String(), kb
 	}
 
 	if v.OpeningHours != "" {
-		t.WriteString("\nЧасы работы: " + openingHours(v.OpeningHours))
+		t.WriteString("🕒 " + esc(openingHours(v.OpeningHours)) + "\n")
 	}
 	if v.Phone != "" {
-		t.WriteString("\nТелефон: " + v.Phone)
+		t.WriteString("📞 " + esc(phoneLabel(v.Phone)) + "\n")
 	}
-	t.WriteString("\n\nОнлайн-записи через СпортСлот здесь пока нет — расписание и пробное занятие уточни у зала.")
-	links := []mc.Button{mc.Link("Маршрут", routeURL(v.Lat, v.Lon))}
+	t.WriteString("\n<i>Расписание и пробное занятие уточни у администратора зала.</i>")
+	links := []mc.Button{mc.Link("Маршрут", routeURL(from, v.Lat, v.Lon))}
 	if v.Website != "" && strings.HasPrefix(v.Website, "http") {
 		links = append(links, mc.Link("Сайт", v.Website))
 	}
@@ -559,7 +601,7 @@ func (b *Bot) venueSlots(ctx context.Context, in Incoming, venueID, sport string
 		return
 	}
 	if len(slots) == 0 {
-		b.reply(ctx, in, venue.Name+": на ближайшие две недели занятий нет.", mc.Keyboard{{mc.Callback("В начало", "menu")}})
+		b.reply(ctx, in, "<b>"+esc(venue.Name)+"</b>\nНа ближайшие две недели занятий нет.", mc.Keyboard{{mc.Callback("В начало", "menu")}})
 		return
 	}
 	kb := mc.Keyboard{}
@@ -575,7 +617,7 @@ func (b *Bot) venueSlots(ctx context.Context, in Incoming, venueID, sport string
 		}
 	}
 	kb = append(kb, []mc.Button{mc.OpenApp("Всё расписание", "venue_"+venue.ID)})
-	b.reply(ctx, in, venue.Name+" — ближайшие занятия. Выбери удобное:", kb)
+	b.reply(ctx, in, "🗓 <b>"+esc(venue.Name)+"</b>\nБлижайшие занятия — выбери удобное:", kb)
 }
 
 func shortTitle(title string) string {
@@ -586,16 +628,16 @@ func shortTitle(title string) string {
 	return title
 }
 
-func (b *Bot) book(ctx context.Context, in Incoming, slotID string) {
+func (b *Bot) book(ctx context.Context, in Incoming, st state, slotID string) {
 	view, created, err := b.bookings.Book(ctx, in.MaxUserID, in.Name, slotID, model.SourceChannelBot)
 	switch {
 	case err == nil:
-		if err := b.presenter.SendConfirmation(ctx, view, created); err != nil {
+		if err := b.presenter.SendConfirmation(ctx, view, created, originOf(st)); err != nil {
 			log.Printf("bot: confirmation: %v", err)
 		}
 		b.save(ctx, in.MaxUserID, state{Step: stepMenu})
 	case errors.Is(err, service.ErrQuotaExceeded):
-		b.reply(ctx, in, "Последнее место только что заняли. Могу поставить тебя в лист ожидания: если кто-то отменит запись, я сам запишу тебя и напишу.",
+		b.reply(ctx, in, "😕 <b>Последнее место только что заняли</b>\n\n Могу поставить тебя в лист ожидания: если кто-то отменит запись, я сам запишу тебя и напишу.",
 			mc.Keyboard{{mc.Callback("Встать в очередь", "wl:"+slotID)}, {mc.Callback("Выбрать другое время", "res")}})
 	case errors.Is(err, service.ErrSlotStarted):
 		b.reply(ctx, in, "Это занятие уже началось. Выбери другое время.", mc.Keyboard{{mc.Callback("К результатам", "res")}})
@@ -611,7 +653,7 @@ func (b *Bot) waitlist(ctx context.Context, in Incoming, slotID string) {
 		b.reply(ctx, in, "Не получилось встать в очередь: занятие уже началось или его нет.", mc.Keyboard{{mc.Callback("В начало", "menu")}})
 		return
 	}
-	b.reply(ctx, in, fmt.Sprintf("Готово, ты %d-й в листе ожидания. Как только место освободится, я запишу тебя и пришлю код входа.", pos),
+	b.reply(ctx, in, fmt.Sprintf("⏳ <b>Ты %d-й в листе ожидания</b>\n\nКак только место освободится, я сам запишу тебя и пришлю код входа.", pos),
 		mc.Keyboard{{mc.Callback("Посмотреть другие варианты", "res")}})
 }
 
@@ -629,11 +671,11 @@ func (b *Bot) myBookings(ctx context.Context, in Incoming) {
 			continue
 		}
 		upcoming++
-		text := fmt.Sprintf("%s\nКод входа: %s", slotLine(v), codeLabel(v.CheckinCode))
-		b.reply(ctx, in, text, bookingKeyboard(v))
+		text := fmt.Sprintf("%s\n🎟 Код входа: <b>%s</b>", slotLine(v), codeLabel(v.CheckinCode))
+		b.reply(ctx, in, text, bookingKeyboard(v, nil))
 	}
 	if upcoming == 0 {
-		b.reply(ctx, in, "Предстоящих записей нет. Подберём тренировку?", mc.Keyboard{{mc.Callback("Подобрать", "menu")}})
+		b.reply(ctx, in, "📭 <b>Предстоящих записей нет</b>\nПодберём тренировку?", mc.Keyboard{{mc.Callback("Подобрать", "menu")}})
 	}
 }
 
@@ -643,7 +685,7 @@ func (b *Bot) confirmCancel(ctx context.Context, in Incoming, bookingID string) 
 		b.reply(ctx, in, "Эта запись уже неактивна.", mc.Keyboard{{mc.Callback("Мои записи", "my")}})
 		return
 	}
-	b.reply(ctx, in, fmt.Sprintf("Отменить запись?\n\n%s", slotLine(view)), mc.Keyboard{
+	b.reply(ctx, in, fmt.Sprintf("❓ <b>Отменить запись?</b>\n\n%s", slotLine(view)), mc.Keyboard{
 		{mc.Callback("Да, отменить", "cxy:"+bookingID), mc.Callback("Оставить", "my")},
 	})
 }
@@ -691,14 +733,14 @@ func (b *Bot) rescheduleOptions(ctx context.Context, in Incoming, bookingID stri
 		return
 	}
 	kb = append(kb, []mc.Button{mc.Callback("Оставить как есть", "my")})
-	b.reply(ctx, in, "На какое время перенести? Код входа останется прежним.", kb)
+	b.reply(ctx, in, "🔁 <b>На какое время перенести?</b>\nКод входа останется прежним.", kb)
 }
 
 func (b *Bot) reschedule(ctx context.Context, in Incoming, bookingID, slotID string) {
 	view, err := b.bookings.Reschedule(ctx, bookingID, slotID, in.MaxUserID)
 	switch {
 	case err == nil:
-		b.reply(ctx, in, "Перенёс запись.\n\n"+slotLine(view)+"\nКод входа: "+codeLabel(view.CheckinCode), bookingKeyboard(view))
+		b.reply(ctx, in, "🔁 <b>Запись перенесена</b>\n\n"+slotLine(view)+"\n🎟 Код входа: <b>"+codeLabel(view.CheckinCode)+"</b>", bookingKeyboard(view, nil))
 	case errors.Is(err, service.ErrQuotaExceeded):
 		b.reply(ctx, in, "На это время места уже закончились.", mc.Keyboard{{mc.Callback("Выбрать другое", "rs:"+bookingID)}})
 	default:
@@ -714,19 +756,19 @@ func (b *Bot) rate(ctx context.Context, in Incoming, bookingID, raw string) {
 		b.reply(ctx, in, "Оценку уже не получится поставить, но спасибо!", nil)
 		return
 	}
-	text := "Спасибо за оценку!"
+	text := "💪 <b>Спасибо за оценку!</b>"
 	if rating <= 3 {
-		text = "Спасибо, что честно. Можно попробовать другой зал или другой вид спорта — подберём?"
+		text = "<b>Спасибо, что честно.</b>\nМожно попробовать другой зал или другой вид спорта — подберём?"
 		b.reply(ctx, in, text, mc.Keyboard{{mc.Callback("Подобрать другое", "quiz")}, {mc.Callback("В начало", "menu")}})
 		return
 	}
 	next, err := b.bookings.NextWeek(ctx, view)
 	if err != nil {
-		b.reply(ctx, in, text+" Главное теперь — не бросить. Запишись на следующее занятие, пока настрой есть.",
+		b.reply(ctx, in, text+"\nГлавное теперь — не бросить. Запишись на следующее занятие, пока настрой есть.",
 			mc.Keyboard{{mc.Callback("Выбрать время", "vs:"+view.Venue.ID)}})
 		return
 	}
-	b.reply(ctx, in, fmt.Sprintf("%s Чтобы вошло в привычку, запишу на то же время через неделю — %s, %s?",
+	b.reply(ctx, in, fmt.Sprintf("%s\nЧтобы вошло в привычку, запишу на то же время через неделю — <b>%s, %s</b>?",
 		text, dayLabel(next.StartAt, b.now()), clock(next.StartAt)), mc.Keyboard{
 		{mc.Callback("Записаться", "bk:"+next.ID)},
 		{mc.Callback("Выбрать другое время", "vs:"+view.Venue.ID)},
@@ -748,7 +790,7 @@ func (b *Bot) askQuestion(ctx context.Context, in Incoming, st state) {
 		back = mc.Callback("В начало", "menu")
 	}
 	kb = append(kb, []mc.Button{back})
-	b.reply(ctx, in, fmt.Sprintf("Вопрос %d из %d. %s", st.QuizIndex+1, len(quiz.Questions), q.Title), kb)
+	b.reply(ctx, in, fmt.Sprintf("✨ <b>Вопрос %d из %d</b>\n\n%s", st.QuizIndex+1, len(quiz.Questions), q.Title), kb)
 }
 
 func (b *Bot) quizAnswer(ctx context.Context, in Incoming, st state, arg string) {
@@ -775,14 +817,44 @@ func (b *Bot) quizResult(ctx context.Context, in Incoming, st state) {
 	results := quiz.Recommend(st.Answers, 2)
 	b.bookings.LogEvent(ctx, in.MaxUserID, "quiz_done", map[string]interface{}{"answers": st.Answers, "top": results[0].Sport})
 	var t strings.Builder
-	t.WriteString("Вот что тебе может подойти:\n")
+	t.WriteString("🎯 <b>Вот что тебе может подойти</b>\n")
 	kb := mc.Keyboard{}
+	medals := []string{"🥇", "🥈", "🥉"}
 	for i, r := range results {
-		fmt.Fprintf(&t, "\n%d. %s. %s", i+1, r.Title, r.Reason)
+		fmt.Fprintf(&t, "\n%s <b>%s</b>\n<i>%s</i>\n", medals[i%len(medals)], r.Title, esc(r.Reason))
 		kb = append(kb, []mc.Button{mc.Callback("Искать: "+strings.ToLower(r.Title), "sp:"+r.Sport)})
 	}
-	t.WriteString("\n\nНачни с пробного занятия — это ни к чему не обязывает.")
+	t.WriteString("\nНачни с пробного занятия — это ни к чему не обязывает.")
 	kb = append(kb, []mc.Button{mc.Callback("Пройти заново", "quiz"), mc.Callback("В начало", "menu")})
 	b.save(ctx, in.MaxUserID, state{Step: stepMenu})
 	b.reply(ctx, in, t.String(), kb)
+}
+
+// addressSearch ищет адрес, написанный текстом, — это замена кнопке геолокации,
+// которая работает не во всех клиентах MAX (например, в веб-версии).
+func (b *Bot) addressSearch(ctx context.Context, in Incoming, st state, text string) {
+	if !b.geocoder.Enabled() {
+		b.reply(ctx, in, "Не нашёл такой район Ростова. Выбери из списка, отправь геолокацию или напиши адрес.", whereKeyboard())
+		return
+	}
+	place, err := b.geocoder.Find(ctx, text)
+	if err != nil {
+		msg := "Не нашёл такой адрес в Ростове. Попробуй написать улицу и дом, например «Большая Садовая, 1», или выбери район."
+		if !errors.Is(err, geocode.ErrNotFound) {
+			log.Printf("bot: geocode: %v", err)
+			msg = "Поиск по адресу сейчас недоступен. Выбери район или отправь геолокацию с телефона."
+		}
+		b.reply(ctx, in, msg, whereKeyboard())
+		return
+	}
+	st.HasPoint, st.Lat, st.Lon, st.District = true, place.Lat, place.Lon, ""
+	st.Address = place.Address
+	st.Mode, st.Limit, st.Step = "", 0, stepTravel
+	if err := b.store.SaveLocation(ctx, in.MaxUserID, place.Lat, place.Lon, place.Address); err != nil {
+		log.Printf("bot: save location: %v", err)
+	}
+	b.save(ctx, in.MaxUserID, st)
+	b.bookings.LogEvent(ctx, in.MaxUserID, "address", nil)
+	b.reply(ctx, in, "📍 Считаю от адреса: <b>"+esc(place.Address)+"</b>", nil)
+	b.askTravel(ctx, in)
 }
