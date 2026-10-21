@@ -95,8 +95,8 @@ func Estimate(from, to Point, mode Mode) Trip {
 		}
 		meters = km * 1.35 * 1000
 	case Driving:
-		seconds = 4*60 + km*1.4/28*3600
-		meters = km * 1.4 * 1000
+		seconds = 3*60 + km*1.3/30*3600
+		meters = km * 1.3 * 1000
 	default:
 		seconds = walk
 		meters = km * 1.3 * 1000

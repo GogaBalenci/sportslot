@@ -340,16 +340,45 @@ func TestSearchByTravelTime(t *testing.T) {
 	if len(cards) == 0 || cards[0].Venue.Name != "Клуб единоборств «Стойка»" {
 		t.Fatalf("nearest studio must be first, got %d cards", len(cards))
 	}
+	seenBeyond := false
 	for _, c := range cards {
-		if c.Travel == nil || c.Travel.Minutes > 15 || c.Travel.Estimated {
-			t.Fatalf("card outside the limit or without route: %s %+v", c.Venue.Name, c.Travel)
+		if c.Travel == nil || c.Travel.Estimated {
+			t.Fatalf("card without route: %s %+v", c.Venue.Name, c.Travel)
+		}
+		switch {
+		case c.BeyondLimit:
+			seenBeyond = true
+			if c.Travel.Minutes <= 15 || c.Travel.Minutes > 30 {
+				t.Fatalf("beyond-limit card out of range: %s %d min", c.Venue.Name, c.Travel.Minutes)
+			}
+		case seenBeyond:
+			t.Fatalf("card within the limit after a beyond-limit one: %s", c.Venue.Name)
+		case c.Travel.Minutes > 15:
+			t.Fatalf("card outside the limit: %s %d min", c.Venue.Name, c.Travel.Minutes)
 		}
 	}
 	for _, n := range router.sizes {
-		if n > 24 {
-			t.Fatalf("one matrix request must not exceed 24 venues, got %d", n)
+		if n > 48 {
+			t.Fatalf("one search must route at most 48 venues, got %d", n)
 		}
 	}
+
+	// Маленький лимит: в выдаче не меньше 4 залов, недостающие — «чуть дальше».
+	q.MaxMinutes = 5
+	small, err := search.FindVenues(ctx, q, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	within := 0
+	for _, c := range small {
+		if !c.BeyondLimit {
+			within++
+		}
+	}
+	if within == len(small) || len(small) > 4 {
+		t.Fatalf("small limit must be padded with up to 4 nearby venues: %d cards, %d within", len(small), within)
+	}
+	q.MaxMinutes = 15
 
 	// Без лимита все площадки получают время, а внутри группы сортируются по минутам.
 	q.MaxMinutes = 0

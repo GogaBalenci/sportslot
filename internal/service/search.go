@@ -27,8 +27,12 @@ func NewSearchService(store *postgres.Store, includeDemo bool, catalogDate time.
 func (s *SearchService) SetRouter(r routing.Router) { s.router = r }
 
 // routedLimit — сколько ближайших площадок получают точное время в пути за один
-// поиск (одна матрица 2ГИС). Остальным достаётся оценка.
-const routedLimit = 24
+// поиск (две матрицы 2ГИС по 24 точки). Остальным достаётся оценка.
+const routedLimit = 48
+
+// minWithinLimit — если в лимит попало меньше залов, ниже показываются
+// ближайшие «чуть дальше», чтобы выдача не была пустой.
+const minWithinLimit = 4
 
 func (s *SearchService) DemoEnabled() bool      { return s.includeDemo }
 func (s *SearchService) CatalogDate() time.Time { return s.catalogDate }
@@ -55,9 +59,11 @@ type Travel struct {
 }
 
 type VenueCard struct {
-	Venue          model.Venue      `json:"venue"`
-	DistanceKM     float64          `json:"distance_km"`
-	Travel         *Travel          `json:"travel,omitempty"`
+	Venue      model.Venue `json:"venue"`
+	DistanceKM float64     `json:"distance_km"`
+	Travel     *Travel     `json:"travel,omitempty"`
+	// BeyondLimit — зал дальше выбранного лимита времени, показан как запасной.
+	BeyondLimit    bool             `json:"beyond_limit,omitempty"`
 	Slots          []model.SlotInfo `json:"slots"`
 	AvailableSlots int              `json:"available_slots"`
 }
@@ -143,7 +149,7 @@ func (s *SearchService) FindVenues(ctx context.Context, q VenueSearch, now time.
 // Заведомо далёкие отсекаются по прямому расстоянию ещё до запроса маршрутов.
 func (s *SearchService) withTravel(ctx context.Context, cards []VenueCard, q VenueSearch) []VenueCard {
 	if q.MaxMinutes > 0 {
-		limit := routing.MaxStraightKM(q.Mode, q.MaxMinutes)
+		limit := routing.MaxStraightKM(q.Mode, extendedLimit(q.MaxMinutes))
 		kept := cards[:0]
 		for _, c := range cards {
 			if c.DistanceKM <= limit {
@@ -175,17 +181,38 @@ func (s *SearchService) withTravel(ctx context.Context, cards []VenueCard, q Ven
 	if q.MaxMinutes <= 0 {
 		return cards
 	}
-	kept := cards[:0]
+	var within, beyond []VenueCard
 	for _, c := range cards {
-		if c.Travel.Minutes <= q.MaxMinutes {
-			kept = append(kept, c)
+		switch {
+		case c.Travel.Minutes <= q.MaxMinutes:
+			within = append(within, c)
+		case c.Travel.Minutes <= extendedLimit(q.MaxMinutes):
+			c.BeyondLimit = true
+			beyond = append(beyond, c)
 		}
 	}
-	return kept
+	if len(within) >= minWithinLimit {
+		return within
+	}
+	sort.SliceStable(beyond, func(i, j int) bool { return beyond[i].Travel.Minutes < beyond[j].Travel.Minutes })
+	if extra := minWithinLimit - len(within); len(beyond) > extra {
+		beyond = beyond[:extra]
+	}
+	return append(within, beyond...)
+}
+
+// extendedLimit — до скольки минут ищем запасные залы «чуть дальше».
+func extendedLimit(minutes int) int {
+	if minutes*2 > minutes+20 {
+		return minutes + 20
+	}
+	return minutes * 2
 }
 
 func group(c VenueCard) int {
 	switch {
+	case c.BeyondLimit:
+		return 3
 	case c.Venue.BookingMode == model.BookingModeInstant && c.AvailableSlots > 0:
 		return 0
 	case c.Venue.BookingMode == model.BookingModeInstant:
