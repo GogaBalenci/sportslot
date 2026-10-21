@@ -86,6 +86,22 @@ required_checks:
       content_type: "application/json"
       required_fields: ["venues", "meta.data_source", "meta.generated_at"]
 
+  - name: "Залы в пределах времени в пути (2ГИС, транспорт до 20 минут)"
+    method: GET
+    path: "/api/v1/venues"
+    role: "user"
+    request_params:
+      query:
+        sport: "boxing"
+        lat: 47.2336
+        lon: 39.6179
+        mode: "transit"
+        max_minutes: 20
+    expected_status: [200, 400]
+    expected_response:
+      content_type: "application/json"
+      required_fields: ["venues", "meta.data_source", "meta.generated_at"]
+
   - name: "Поиск свободных занятий по критериям и диапазону дат"
     method: POST
     path: "/api/v1/search"

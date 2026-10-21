@@ -37,6 +37,7 @@ services:
       CATALOG_PATH: seed-data/rostov_catalog.json
       DEMO_DATA: ${DEMO_DATA:-on}
       PARTNER_DEMO_CODE: ${PARTNER_DEMO_CODE:-}
+      DGIS_API_KEY: ${DGIS_API_KEY:-}
       TEST_MAX_USER_IDS: ${TEST_MAX_USER_IDS:-max-test-user-001}
     ports:
       - "${API_PORT:-8080}:8080"
@@ -49,6 +50,7 @@ services:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
         VITE_DEV_MAX_USER_ID: ${VITE_DEV_MAX_USER_ID:-max-test-user-001}
         VITE_YANDEX_MAPS_API_KEY: ${VITE_YANDEX_MAPS_API_KEY:-}
+        VITE_YANDEX_SUGGEST_API_KEY: ${VITE_YANDEX_SUGGEST_API_KEY:-}
     depends_on:
       api:
         condition: service_started

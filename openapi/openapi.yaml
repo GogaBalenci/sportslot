@@ -98,13 +98,21 @@ paths:
   /api/v1/venues:
     get:
       tags: [catalog]
-      summary: Площадки по фильтрам — сначала студии с онлайн-записью, затем каталог OSM по расстоянию
+      summary: Площадки по фильтрам — сначала студии с онлайн-записью, затем остальные по времени в пути или расстоянию
       parameters:
         - { name: sport, in: query, schema: { $ref: "#/components/schemas/SportId" } }
         - { name: when, in: query, schema: { type: string, enum: [today, tomorrow, weekday_eve, weekend, any] } }
         - { name: district, in: query, schema: { type: string, example: sovetsky } }
         - { name: lat, in: query, schema: { type: number, example: 47.2336 } }
         - { name: lon, in: query, schema: { type: number, example: 39.6179 } }
+        - name: mode
+          in: query
+          description: Способ передвижения для расчёта времени в пути (вместе с lat/lon)
+          schema: { type: string, enum: [walking, transit, driving] }
+        - name: max_minutes
+          in: query
+          description: Не показывать залы дальше этого времени в пути; 0 — без лимита
+          schema: { type: integer, minimum: 0, maximum: 180, example: 20 }
         - { name: instant_only, in: query, schema: { type: boolean } }
       responses:
         "200":
@@ -527,6 +535,13 @@ components:
       properties:
         venue: { $ref: "#/components/schemas/Venue" }
         distance_km: { type: number }
+        travel:
+          type: object
+          description: Время в пути от точки пользователя (есть, если переданы lat, lon и mode)
+          properties:
+            mode: { type: string, enum: [walking, transit, driving] }
+            minutes: { type: integer, example: 14 }
+            estimated: { type: boolean, description: "true — оценка по расстоянию, маршрут не построен" }
         slots: { type: array, items: { $ref: "#/components/schemas/SlotInfo" } }
         available_slots: { type: integer }
     VenueDetails:
