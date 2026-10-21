@@ -19,6 +19,7 @@ interface MaxWebApp {
   platform?: 'ios' | 'android' | 'desktop' | 'web'
   colorScheme?: 'light' | 'dark'
   ready?: () => void
+  close?: () => void
   expand?: () => void
   onEvent?: (event: string, handler: () => void) => void
   openLink?: (url: string) => void

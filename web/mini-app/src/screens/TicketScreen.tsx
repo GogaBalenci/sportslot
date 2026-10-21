@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
-import { CalendarClock, CheckCircle2, Clock, MapPin, Navigation } from 'lucide-react'
+import { CalendarClock, CheckCircle2, Clock, MapPin, MessageCircle, Navigation, Phone } from 'lucide-react'
 import { api, type Booking } from '../api'
 import { Btn, ErrorBlock, Loader, SportBadge } from '../components'
 import { code, dayTitle, routeUrl, time, until } from '../format'
@@ -119,6 +119,21 @@ export function TicketScreen({ id, fresh }: { id: string; fresh?: boolean }) {
             <Btn size="lg" variant="ghost" block onClick={() => setConfirmCancel(true)}>Отменить запись</Btn>
           )}
         </div>
+      )}
+
+      {b.status === 'cancelled' && b.cancel_reason === 'studio' && (
+        <section className="info-card">
+          <p>Запись отменена администратором студии. Узнать подробности и подобрать другое время можно у студии.</p>
+          {b.venue.phone && (
+            <a className="link-row" href={`tel:${b.venue.phone.replace(/[^\d+]/g, '')}`}><Phone size={18} /> {b.venue.phone}</a>
+          )}
+        </section>
+      )}
+
+      {b.venue.booking_mode === 'instant' && (
+        <Btn size="lg" variant="ghost" block icon={<MessageCircle size={18} />} onClick={() => nav.push({ name: 'chat', venueId: b.venue.id, venueName: b.venue.name })}>
+          Написать студии
+        </Btn>
       )}
     </div>
   )

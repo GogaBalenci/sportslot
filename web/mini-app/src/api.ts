@@ -11,7 +11,7 @@ export type Venue = {
   district: string
   lat: number
   lon: number
-  source: 'osm' | 'demo_partner'
+  source: 'osm' | 'demo_partner' | 'partner'
   source_url?: string
   booking_mode: 'instant' | 'external'
   phone?: string
@@ -37,6 +37,69 @@ export type TravelMode = 'walking' | 'transit' | 'driving'
 
 export type Travel = { mode: TravelMode; minutes: number; estimated: boolean }
 
+export type Message = { id: number; venue_id: string; user_id: string; author: 'client' | 'studio'; text: string; created_at: string }
+
+export type Template = {
+  id: string
+  venue_id: string
+  weekday: number
+  start_minute: number
+  duration_min: number
+  title: string
+  sport_type: string
+  level: string
+  quota: number
+}
+
+export type StudioSlot = {
+  id: string
+  venue_id: string
+  title: string
+  sport_type: string
+  start_at: string
+  end_at: string
+  quota_total: number
+  quota_booked: number
+  template_id?: string
+  closed?: boolean
+  cancelled?: boolean
+  booked: number
+}
+
+export type StudioSummary = { venue: Venue; today_bookings: number; upcoming_bookings: number; unread_messages: number }
+
+export type ClientCard = {
+  booking: Booking
+  max_user_id: string
+  history: Booking[]
+  visits: number
+  no_shows: number
+  messages: Message[]
+}
+
+export type Thread = { user_id: string; user_name: string; last_text: string; last_at: string; last_by: string; unread: number }
+
+export type StudioStats = {
+  since: string
+  bookings: number
+  attended: number
+  no_show: number
+  cancelled_by_client: number
+  upcoming: number
+  clients: number
+  returning_clients: number
+  rating_avg: number
+  ratings: number
+}
+
+export type VenueProfile = { phone: string; website: string; description: string; what_to_bring: string; trial_price: number | null }
+
+export type PlatformStudio = {
+  venue: Venue
+  admins: { max_user_id: string; name: string; created_at: string }[]
+  invites: { token: string; expires_at: string; used_by?: string }[]
+}
+
 export type LastLocation = { lat: number; lon: number; address?: string; at: string }
 
 export type VenueCard = {
@@ -52,7 +115,9 @@ export type VenueDetails = Venue & { venue_id: string; all_slots: SlotInfo[] }
 
 export type Booking = {
   id: string
+  user_id: string
   slot_id: string
+  cancel_reason?: 'user' | 'studio'
   status: 'confirmed' | 'cancelled' | 'attended' | 'no_show'
   checkin_code: string
   rating?: number
@@ -114,8 +179,10 @@ async function request<T>(method: string, path: string, body?: unknown, headers:
 }
 
 const user = <T>(method: string, path: string, body?: unknown) => request<T>(method, path, body, userHeaders())
-const partner = <T>(method: string, path: string, body?: unknown) =>
-  request<T>(method, path, body, { Authorization: `Partner ${partnerToken}` })
+
+// Кабинет студии: администратор входит по подписи MAX, проверяющие — по демо-коду.
+const studio = <T>(method: string, path: string, body?: unknown) =>
+  request<T>(method, path, body, partnerToken ? { Authorization: `Partner ${partnerToken}` } : userHeaders())
 
 export type VenueQuery = {
   sport?: string
@@ -148,7 +215,46 @@ export const api = {
   feedback: (id: string, rating: number) => user<void>('POST', `/bookings/${id}/feedback`, { rating }),
 
   partnerLogin: (code: string) => request<{ token: string }>('POST', '/partner/login', { code }),
-  partnerBookings: () => partner<{ bookings: Booking[] }>('GET', '/partner/bookings'),
-  partnerCheckIn: (code: string) => partner<Booking>('POST', '/partner/checkin', { code }),
-  partnerRemind: (id: string) => partner<void>('POST', `/partner/bookings/${id}/remind`),
+
+  saveLocation: (lat: number, lon: number, address = '') =>
+    user<{ sport?: string; when?: string }>('POST', '/me/location', { lat, lon, address }),
+  clientMessages: (venueId: string) => user<{ messages: Message[] }>('GET', `/messages?venue_id=${venueId}`),
+  sendClientMessage: (venueId: string, text: string) => user<Message>('POST', '/messages', { venue_id: venueId, text }),
+  acceptInvite: (token: string) => user<Venue>('POST', '/studio/invites/accept', { token }),
+
+  studioMe: () => studio<{ studios: StudioSummary[]; platform: boolean; demo: boolean }>('GET', '/studio/me'),
+  studioBookings: (venueId: string) => studio<{ bookings: Booking[] }>('GET', `/studio/${venueId}/bookings`),
+  studioBooking: (id: string) => studio<ClientCard>('GET', `/studio/bookings/${id}`),
+  studioRemind: (id: string) => studio<void>('POST', `/studio/bookings/${id}/remind`),
+  studioCheckIn: (code: string) => studio<Booking & { training?: boolean; message?: string }>('POST', '/studio/checkin', { code }),
+  templates: (venueId: string) => studio<{ templates: Template[] }>('GET', `/studio/${venueId}/templates`),
+  saveTemplate: (venueId: string, t: Partial<Template>) =>
+    t.id
+      ? studio<{ template: Template; kept_with_bookings: number }>('PUT', `/studio/${venueId}/templates/${t.id}`, t)
+      : studio<{ template: Template; kept_with_bookings: number }>('POST', `/studio/${venueId}/templates`, t),
+  deleteTemplate: (venueId: string, id: string) =>
+    studio<{ kept_with_bookings: number }>('DELETE', `/studio/${venueId}/templates/${id}`),
+  studioSlots: (venueId: string) => studio<{ slots: StudioSlot[] }>('GET', `/studio/${venueId}/slots`),
+  closeSlot: (venueId: string, slotId: string, closed: boolean) =>
+    studio<void>('POST', `/studio/${venueId}/slots/${slotId}/close`, { closed }),
+  cancelSlot: (venueId: string, slotId: string) =>
+    studio<{ notified: number }>('POST', `/studio/${venueId}/slots/${slotId}/cancel`),
+  studioStats: (venueId: string) => studio<StudioStats>('GET', `/studio/${venueId}/stats`),
+  studioProfile: (venueId: string, p: VenueProfile) => studio<Venue>('PATCH', `/studio/${venueId}/profile`, p),
+  threads: (venueId: string) => studio<{ threads: Thread[] }>('GET', `/studio/${venueId}/threads`),
+  thread: (venueId: string, userId: string) =>
+    studio<{ user: { id: string; name: string }; messages: Message[] }>('GET', `/studio/${venueId}/threads/${userId}`),
+  reply: (venueId: string, userId: string, text: string) =>
+    studio<Message>('POST', `/studio/${venueId}/threads/${userId}`, { text }),
+  messageRef: (id: string) => studio<{ venue_id: string; user_id: string }>('GET', `/studio/messages/${id}`),
+
+  platformStudios: () => studio<{ studios: PlatformStudio[] }>('GET', '/platform/studios'),
+  platformCatalog: (q: string) => studio<{ venues: Venue[] }>('GET', `/platform/catalog?q=${encodeURIComponent(q)}`),
+  platformConnect: (venueId: string) => studio<Venue>('POST', '/platform/studios', { venue_id: venueId }),
+  platformCreate: (s: { name: string; address: string; sports: string[]; phone: string }) =>
+    studio<Venue>('POST', '/platform/studios', s),
+  platformInvite: (venueId: string) =>
+    studio<{ token: string; link: string; expires_at: string }>('POST', `/platform/studios/${venueId}/invites`),
+  platformRemoveAdmin: (venueId: string, maxUserId: string) =>
+    studio<void>('DELETE', `/platform/studios/${venueId}/admins/${maxUserId}`),
 }

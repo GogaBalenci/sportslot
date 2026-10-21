@@ -1,11 +1,20 @@
 import { createContext, useContext } from 'react'
 import type { Catalog, TravelMode } from './api'
 
+export type Point = { lat: number; lon: number; label: string }
+
 export type Route =
-  | { name: 'search'; sport?: string }
+  | { name: 'search'; sport?: string; when?: string; point?: Point }
   | { name: 'quiz' }
   | { name: 'my' }
-  | { name: 'partner' }
+  | { name: 'studio'; venueId?: string; tab?: string }
+  | { name: 'studioBooking'; id: string }
+  | { name: 'studioThread'; venueId: string; userId: string }
+  | { name: 'studioMessage'; id: string }
+  | { name: 'platform' }
+  | { name: 'invite'; token: string }
+  | { name: 'geo' }
+  | { name: 'chat'; venueId: string; venueName: string }
   | { name: 'venue'; id: string; reschedule?: string }
   | { name: 'ticket'; id: string; fresh?: boolean }
 
@@ -46,7 +55,17 @@ export function routeFromStart(param: string): Route {
     case 'my':
       return { name: 'my' }
     case 'partner':
-      return { name: 'partner' }
+      return { name: 'studio' }
+    case 'studio':
+      return /^[0-9a-f]{32}$/.test(value) ? { name: 'invite', token: value } : { name: 'studio' }
+    case 'sb':
+      return value ? { name: 'studioBooking', id: value } : { name: 'studio' }
+    case 'sm':
+      return value ? { name: 'studioMessage', id: value } : { name: 'studio' }
+    case 'platform':
+      return { name: 'platform' }
+    case 'geo':
+      return { name: 'geo' }
   }
   return { name: 'search' }
 }

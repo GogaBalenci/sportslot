@@ -7,20 +7,19 @@ import { travelModeTitle } from '../format'
 import { TimeSlider } from '../TimeSlider'
 import { MapView } from '../MapView'
 import { userFirstName } from '../max'
-import { useNav } from '../nav'
+import { useNav, type Point } from '../nav'
 
-type Point = { lat: number; lon: number; label: string }
 
 const modes: TravelMode[] = ['transit', 'walking', 'driving']
 
 
-export function SearchScreen({ initialSport }: { initialSport?: string }) {
+export function SearchScreen({ initialSport, initialWhen, initialPoint }: { initialSport?: string; initialWhen?: string; initialPoint?: Point }) {
   const nav = useNav()
   const catalog = nav.catalog
   const [sport, setSport] = useState(initialSport ?? '')
-  const [when, setWhen] = useState('any')
+  const [when, setWhen] = useState(initialWhen || 'any')
   const [district, setDistrict] = useState('')
-  const [me, setMe] = useState<Point | undefined>()
+  const [me, setMe] = useState<Point | undefined>(initialPoint)
   const [view, setView] = useState<'list' | 'map'>('list')
   const [cards, setCards] = useState<VenueCard[] | null>(null)
   const [error, setError] = useState('')

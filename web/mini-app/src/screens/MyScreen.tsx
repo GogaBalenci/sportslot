@@ -83,7 +83,7 @@ export function MyScreen() {
           ))}
         </div>
       )}
-      <button className="link-row" onClick={() => nav.push({ name: 'partner' })}>
+      <button className="link-row" onClick={() => nav.push({ name: 'studio' })}>
         <Store size={18} /> Я администратор студии
       </button>
     </div>

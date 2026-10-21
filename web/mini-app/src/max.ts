@@ -94,3 +94,17 @@ export function setBackButton(handler: (() => void) | null): void {
     button.hide()
   }
 }
+
+// closeApp закрывает мини-приложение и возвращает пользователя в чат с ботом.
+export function closeApp(): void {
+  app()?.close?.()
+}
+
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    return false
+  }
+}
