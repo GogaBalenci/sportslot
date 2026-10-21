@@ -1,12 +1,23 @@
 import { useCallback, useEffect, useState } from 'react'
-import { List, Map as MapIcon, Navigation } from 'lucide-react'
-import { api, type Booking, type SlotInfo, type Venue, type VenueCard } from '../api'
-import { BookingSheet, Btn, Chips, Empty, ErrorBlock, Loader, Logo, NextWorkout, VenueCardView } from '../components'
+import { List, Map as MapIcon, Navigation, X } from 'lucide-react'
+import { api, type Booking, type SlotInfo, type TravelMode, type Venue, type VenueCard } from '../api'
+import { AddressInput } from '../AddressInput'
+import { BookingSheet, Btn, Chips, Empty, ErrorBlock, Loader, Logo, NextWorkout, VenueCardView, modeIcon } from '../components'
+import { travelModeTitle } from '../format'
 import { MapView } from '../MapView'
 import { userFirstName } from '../max'
 import { useNav } from '../nav'
 
-type Point = { lat: number; lon: number }
+type Point = { lat: number; lon: number; label: string }
+
+const modes: TravelMode[] = ['transit', 'walking', 'driving']
+const limits = [
+  { id: '10', title: 'до 10 мин' },
+  { id: '15', title: 'до 15 мин' },
+  { id: '20', title: 'до 20 мин' },
+  { id: '30', title: 'до 30 мин' },
+  { id: '0', title: 'Не важно' },
+]
 
 export function SearchScreen({ initialSport }: { initialSport?: string }) {
   const nav = useNav()
@@ -20,6 +31,8 @@ export function SearchScreen({ initialSport }: { initialSport?: string }) {
   const [error, setError] = useState('')
   const [picked, setPicked] = useState<{ venue: Venue; slot: SlotInfo } | null>(null)
   const [locating, setLocating] = useState(false)
+  const [mode, setMode] = useState<TravelMode>('transit')
+  const [limit, setLimit] = useState('20')
   const [next, setNext] = useState<Booking | null>(null)
 
   useEffect(() => {
@@ -38,10 +51,18 @@ export function SearchScreen({ initialSport }: { initialSport?: string }) {
     setCards(null)
     setError('')
     api
-      .venues({ sport, when, district: me ? '' : district, lat: me?.lat, lon: me?.lon })
+      .venues({
+        sport,
+        when,
+        district: me ? '' : district,
+        lat: me?.lat,
+        lon: me?.lon,
+        mode: me ? mode : undefined,
+        max_minutes: me ? Number(limit) : undefined,
+      })
       .then((r) => setCards(r.venues))
       .catch((e) => setError(e.message))
-  }, [sport, when, district, me])
+  }, [sport, when, district, me, mode, limit])
 
   useEffect(load, [load])
 
@@ -54,7 +75,7 @@ export function SearchScreen({ initialSport }: { initialSport?: string }) {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLocating(false)
-        setMe({ lat: pos.coords.latitude, lon: pos.coords.longitude })
+        setMe({ lat: pos.coords.latitude, lon: pos.coords.longitude, label: 'Моё местоположение' })
         setDistrict('')
       },
       () => {
@@ -70,6 +91,7 @@ export function SearchScreen({ initialSport }: { initialSport?: string }) {
   const other = cards?.filter((c) => c.venue.booking_mode !== 'instant') ?? []
   const onSelect = useCallback((id: string) => nav.push({ name: 'venue', id }), [nav])
   const name = userFirstName()
+  const canWiden = !!me && limit !== '0' && Number(limit) < 60
 
   return (
     <div className="screen">
@@ -84,23 +106,44 @@ export function SearchScreen({ initialSport }: { initialSport?: string }) {
       <Chips items={sports} value={sport} onChange={setSport} />
       <Chips items={catalog?.whens ?? []} value={when} onChange={setWhen} tone="navy" />
 
-      <div className="row">
-        <select
-          className="select"
-          value={me ? 'geo' : district}
-          onChange={(e) => {
-            setMe(undefined)
-            setDistrict(e.target.value === 'geo' ? '' : e.target.value)
-          }}
-        >
-          <option value="">Весь город</option>
-          {me && <option value="geo">Рядом со мной</option>}
-          {catalog?.districts.map((d) => (
-            <option key={d.id} value={d.id}>{d.title} район</option>
-          ))}
-        </select>
-        <Btn variant="secondary" loading={locating} icon={<Navigation size={18} />} onClick={locate}>Рядом</Btn>
-      </div>
+      <section className="place">
+        <div className="place__title">Откуда добираться</div>
+        {me ? (
+          <div className="place__current">
+            <Navigation size={16} />
+            <span>{me.label}</span>
+            <button aria-label="Сбросить точку" onClick={() => setMe(undefined)}><X size={16} /></button>
+          </div>
+        ) : (
+          <>
+            <AddressInput onPick={setMe} onError={nav.toast} />
+            <div className="row">
+              <select className="select" value={district} onChange={(e) => setDistrict(e.target.value)}>
+                <option value="">Весь город</option>
+                {catalog?.districts.map((d) => (
+                  <option key={d.id} value={d.id}>{d.title} район</option>
+                ))}
+              </select>
+              <Btn variant="secondary" loading={locating} icon={<Navigation size={18} />} onClick={locate}>Рядом</Btn>
+            </div>
+          </>
+        )}
+        {me && (
+          <>
+            <div className="modes">
+              {modes.map((m) => {
+                const Icon = modeIcon[m]
+                return (
+                  <button key={m} className={m === mode ? 'active' : ''} onClick={() => setMode(m)}>
+                    <Icon size={16} /> {travelModeTitle(m)}
+                  </button>
+                )
+              })}
+            </div>
+            <Chips items={limits} value={limit} onChange={setLimit} tone="navy" />
+          </>
+        )}
+      </section>
 
       <div className="segmented">
         <button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')}><List size={16} /> Список</button>
@@ -122,7 +165,14 @@ export function SearchScreen({ initialSport }: { initialSport?: string }) {
 
       {cards && view === 'list' && (
         <>
-          {cards.length === 0 && (
+          {cards.length === 0 && canWiden && (
+            <Empty
+              title={`За ${limit} мин ${travelModeTitle(mode)} ничего не нашлось`}
+              text="Попробуй увеличить время в пути или выбрать другой способ."
+              action={<Btn onClick={() => setLimit(String(Math.min(Number(limit) * 2, 60)))}>Искать до {Math.min(Number(limit) * 2, 60)} мин</Btn>}
+            />
+          )}
+          {cards.length === 0 && !canWiden && (
             <Empty
               title="Здесь пока пусто"
               text="Попробуй другое время или весь город."

@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import type { VenueCard } from './api'
+import { hasMapKey, loadYmaps } from './ymaps'
 
 const ROSTOV: [number, number] = [47.2357, 39.7015]
 const ORANGE = '#FF5722'
 const GREY = '#94A3B8'
-const YANDEX_KEY = import.meta.env.VITE_YANDEX_MAPS_API_KEY ?? ''
 
 type Props = { cards: VenueCard[]; me?: { lat: number; lon: number }; onSelect: (id: string) => void }
 
@@ -14,25 +14,8 @@ type Props = { cards: VenueCard[]; me?: { lat: number; lon: number }; onSelect: 
 // иначе запасная карта на Leaflet. Студии с онлайн-записью — оранжевые метки.
 export function MapView(props: Props) {
   const [yandexFailed, setYandexFailed] = useState(false)
-  if (YANDEX_KEY && !yandexFailed) return <YandexMap {...props} onError={() => setYandexFailed(true)} />
+  if (hasMapKey() && !yandexFailed) return <YandexMap {...props} onError={() => setYandexFailed(true)} />
   return <FallbackMap {...props} />
-}
-
-let ymapsLoader: Promise<any> | null = null
-
-function loadYandexMaps(): Promise<any> {
-  if (window.ymaps) return new Promise((resolve) => window.ymaps.ready(() => resolve(window.ymaps)))
-  ymapsLoader ??= new Promise((resolve, reject) => {
-    const script = document.createElement('script')
-    script.src = `https://api-maps.yandex.ru/2.1/?apikey=${encodeURIComponent(YANDEX_KEY)}&lang=ru_RU`
-    script.onload = () => window.ymaps.ready(() => resolve(window.ymaps))
-    script.onerror = () => {
-      ymapsLoader = null
-      reject(new Error('yandex maps are unavailable'))
-    }
-    document.head.appendChild(script)
-  })
-  return ymapsLoader
 }
 
 function YandexMap({ cards, me, onSelect, onError }: Props & { onError: () => void }) {
@@ -42,7 +25,7 @@ function YandexMap({ cards, me, onSelect, onError }: Props & { onError: () => vo
 
   useEffect(() => {
     let cancelled = false
-    loadYandexMaps()
+    loadYmaps()
       .then((ymaps) => {
         if (cancelled || !holder.current) return
         map.current = new ymaps.Map(holder.current, { center: ROSTOV, zoom: 12, controls: ['zoomControl'] }, { suppressMapOpenBlock: true })
@@ -71,7 +54,7 @@ function YandexMap({ cards, me, onSelect, onError }: Props & { onError: () => vo
       mark.events.add('click', () => onSelect(c.venue.id))
       collection.add(mark)
     })
-    if (me) collection.add(new ymaps.Placemark([me.lat, me.lon], { hintContent: 'Ты здесь' }, { preset: 'islands#geolocationIcon' }))
+    if (me) collection.add(new ymaps.Placemark([me.lat, me.lon], { hintContent: 'Отсюда считаем время в пути' }, { preset: 'islands#geolocationIcon' }))
     map.current.geoObjects.add(collection)
     if (collection.getLength() > 1) map.current.setBounds(collection.getBounds(), { checkZoomRange: true, zoomMargin: 36 })
     else if (collection.getLength() === 1) map.current.setCenter(collection.get(0).geometry.getCoordinates(), 14)

@@ -33,9 +33,14 @@ export type SlotInfo = {
   quota_available: number
 }
 
+export type TravelMode = 'walking' | 'transit' | 'driving'
+
+export type Travel = { mode: TravelMode; minutes: number; estimated: boolean }
+
 export type VenueCard = {
   venue: Venue
   distance_km: number
+  travel?: Travel
   slots: SlotInfo[]
   available_slots: number
 }
@@ -109,7 +114,15 @@ const user = <T>(method: string, path: string, body?: unknown) => request<T>(met
 const partner = <T>(method: string, path: string, body?: unknown) =>
   request<T>(method, path, body, { Authorization: `Partner ${partnerToken}` })
 
-export type VenueQuery = { sport?: string; when?: string; district?: string; lat?: number; lon?: number }
+export type VenueQuery = {
+  sport?: string
+  when?: string
+  district?: string
+  lat?: number
+  lon?: number
+  mode?: TravelMode
+  max_minutes?: number
+}
 
 export const api = {
   catalog: () => request<Catalog>('GET', '/catalog'),

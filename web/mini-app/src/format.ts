@@ -93,3 +93,13 @@ export function nextDays(count: number): { key: string; iso: string }[] {
     return { key: dayKey(iso), iso }
   })
 }
+
+const modeTitle = { walking: 'пешком', transit: 'на транспорте', driving: 'на машине' } as const
+
+// travelLabel — «12 мин пешком», «1 ч 05 мин на транспорте»; оценка — со значком «≈».
+export function travelLabel(t: { mode: keyof typeof modeTitle; minutes: number; estimated: boolean }): string {
+  const value = t.minutes >= 60 ? `${Math.floor(t.minutes / 60)} ч ${String(t.minutes % 60).padStart(2, '0')} мин` : `${t.minutes} мин`
+  return `${t.estimated ? '≈ ' : ''}${value} ${modeTitle[t.mode]}`
+}
+
+export const travelModeTitle = (mode: keyof typeof modeTitle) => modeTitle[mode]

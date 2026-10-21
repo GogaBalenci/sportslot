@@ -1,7 +1,7 @@
 import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
-import { Calendar, Check, Clock, MapPin, Navigation, QrCode, Zap } from 'lucide-react'
-import { ApiError, api, type Booking, type SlotInfo, type Venue, type VenueCard } from './api'
-import { dayTitle, distance, routeUrl, seats, shortDay, time, trial, until } from './format'
+import { Bus, Calendar, Car, Check, Clock, Footprints, MapPin, Navigation, QrCode, Zap } from 'lucide-react'
+import { ApiError, api, type Booking, type SlotInfo, type Travel, type TravelMode, type Venue, type VenueCard } from './api'
+import { dayTitle, distance, routeUrl, seats, shortDay, time, travelLabel, trial, until } from './format'
 import { haptic, openExternal } from './max'
 import { useNav } from './nav'
 
@@ -76,6 +76,18 @@ export function SportBadge({ sport }: { sport: string }) {
   return title ? <span className="badge badge--navy">{title}</span> : null
 }
 
+export const modeIcon: Record<TravelMode, typeof Bus> = { walking: Footprints, transit: Bus, driving: Car }
+
+export function TravelBadge({ travel }: { travel: Travel }) {
+  const Icon = modeIcon[travel.mode]
+  return (
+    <span className={`travel${travel.estimated ? ' travel--estimated' : ''}`}>
+      <Icon size={14} strokeWidth={2.4} />
+      {travelLabel(travel)}
+    </span>
+  )
+}
+
 export function districtTitle(id: string, districts: { id: string; title: string }[] = []): string {
   const d = districts.find((x) => x.id === id)
   return d ? `${d.title} р-н` : ''
@@ -105,7 +117,7 @@ export function SlotPill({ slot, booked, showDay, onClick }: { slot: SlotInfo; b
 export function VenueCardView({ card, sport, onSlot }: { card: VenueCard; sport?: string; onSlot: (venue: Venue, slot: SlotInfo) => void }) {
   const nav = useNav()
   const v = card.venue
-  const place = [districtTitle(v.district, nav.catalog?.districts), distance(card.distance_km)].filter(Boolean).join(' · ')
+  const place = [districtTitle(v.district, nav.catalog?.districts), card.travel ? '' : distance(card.distance_km)].filter(Boolean).join(' · ')
   const instant = v.booking_mode === 'instant'
   return (
     <article className={`card${instant ? ' card--instant' : ''}`} onClick={() => nav.push({ name: 'venue', id: v.id })}>
@@ -114,6 +126,7 @@ export function VenueCardView({ card, sport, onSlot }: { card: VenueCard; sport?
         <AccessBadge venue={v} />
       </div>
       <h3 className="card__title">{v.name}</h3>
+      {card.travel && <TravelBadge travel={card.travel} />}
       <div className="meta">
         <MapPin size={14} />
         <span>{[place, v.address].filter(Boolean).join(' · ')}</span>
