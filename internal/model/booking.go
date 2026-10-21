@@ -30,6 +30,8 @@ type Booking struct {
 	CreatedAt     time.Time     `json:"created_at"`
 	CancelledAt   *time.Time    `json:"cancelled_at,omitempty"`
 	AttendedAt    *time.Time    `json:"attended_at,omitempty"`
+	// CancelReason — кто отменил: user или studio.
+	CancelReason string `json:"cancel_reason,omitempty"`
 }
 
 // BookingView — бронь вместе с занятием и площадкой: то, что видят

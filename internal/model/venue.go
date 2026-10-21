@@ -9,6 +9,8 @@ const (
 	VenueSourceOSM VenueSource = "osm"
 	// VenueSourceDemo — вымышленная студия-партнёр с модельным расписанием.
 	VenueSourceDemo VenueSource = "demo_partner"
+	// VenueSourcePartner — реальная студия, подключённая к онлайн-записи.
+	VenueSourcePartner VenueSource = "partner"
 )
 
 type BookingMode string

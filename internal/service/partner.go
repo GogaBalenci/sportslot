@@ -65,10 +65,13 @@ func (s *PartnerService) Authorize(ctx context.Context, token string) error {
 	return nil
 }
 
-// Bookings — записи на ближайшую неделю, включая сегодняшние.
+// Bookings — записи демо-партнёров на ближайшую неделю, включая сегодняшние.
 func (s *PartnerService) Bookings(ctx context.Context, now time.Time) ([]model.BookingView, error) {
-	start := now.Add(-12 * time.Hour)
-	views, err := s.store.ListVenueBookings(ctx, start, now.Add(8*24*time.Hour), true)
+	ids, err := s.store.VenueIDsBySource(ctx, model.VenueSourceDemo)
+	if err != nil {
+		return nil, err
+	}
+	views, err := s.store.VenueBookings(ctx, ids, now.Add(-12*time.Hour), now.Add(8*24*time.Hour))
 	if views == nil {
 		views = []model.BookingView{}
 	}
@@ -86,13 +89,31 @@ func ParseCheckinCode(raw string) (string, bool) {
 	return m[1], true
 }
 
-// CheckIn отмечает посещение и сразу спрашивает у пользователя, как прошло занятие.
+// TrainingCode — учебный пропуск: на нём администратор пробует сканер, не трогая реальных клиентов.
+const TrainingCode = "000000"
+
+var ErrTrainingCheckin = errors.New("training check-in")
+
+// CheckIn отмечает посещение в демо-студиях (вход по общему коду).
 func (s *PartnerService) CheckIn(ctx context.Context, raw string) (*model.BookingView, error) {
+	ids, err := s.store.VenueIDsBySource(ctx, model.VenueSourceDemo)
+	if err != nil {
+		return nil, err
+	}
+	return s.CheckInVenues(ctx, raw, ids)
+}
+
+// CheckInVenues отмечает посещение в одной из студий venueIDs и сразу
+// спрашивает у клиента, как прошло занятие.
+func (s *PartnerService) CheckInVenues(ctx context.Context, raw string, venueIDs []string) (*model.BookingView, error) {
 	code, ok := ParseCheckinCode(raw)
 	if !ok {
 		return nil, ErrBadCheckinCode
 	}
-	view, err := s.store.CheckIn(ctx, code, true)
+	if code == TrainingCode {
+		return nil, ErrTrainingCheckin
+	}
+	view, err := s.store.CheckIn(ctx, code, venueIDs)
 	if err != nil {
 		return view, err
 	}

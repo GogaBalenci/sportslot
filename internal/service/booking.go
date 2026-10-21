@@ -12,6 +12,20 @@ import (
 type BookingService struct {
 	store     *postgres.Store
 	presenter Presenter
+	studio    StudioNotifier
+}
+
+// StudioNotifier сообщает администраторам студии о событиях с записями.
+type StudioNotifier interface {
+	NotifyBooking(kind string, view *model.BookingView)
+}
+
+func (s *BookingService) SetStudioNotifier(n StudioNotifier) { s.studio = n }
+
+func (s *BookingService) notifyStudio(kind string, view *model.BookingView) {
+	if s.studio != nil && view != nil {
+		s.studio.NotifyBooking(kind, view)
+	}
 }
 
 func NewBookingService(store *postgres.Store) *BookingService {
@@ -48,6 +62,9 @@ func (s *BookingService) Book(ctx context.Context, maxUserID, userName, slotID s
 		s.event(ctx, maxUserID, "booking_created", map[string]interface{}{"slot_id": slotID, "channel": channel})
 	}
 	view, err := s.store.GetBookingView(ctx, b.ID)
+	if err == nil && created {
+		s.notifyStudio("booked", view)
+	}
 	return view, created, err
 }
 
@@ -74,6 +91,7 @@ func (s *BookingService) Cancel(ctx context.Context, bookingID, maxUserID string
 	}
 	view.Status = model.BookingStatusCancelled
 	s.event(ctx, maxUserID, "booking_cancelled", map[string]interface{}{"booking_id": bookingID})
+	s.notifyStudio("cancelled", view)
 	s.notifyPromotion(promotion)
 	return view, nil
 }
@@ -99,7 +117,11 @@ func (s *BookingService) Reschedule(ctx context.Context, bookingID, newSlotID, m
 	}
 	s.event(ctx, maxUserID, "booking_rescheduled", map[string]interface{}{"booking_id": bookingID})
 	s.notifyPromotion(promotion)
-	return s.store.GetBookingView(ctx, b.ID)
+	view, err := s.store.GetBookingView(ctx, b.ID)
+	if err == nil {
+		s.notifyStudio("rescheduled", view)
+	}
+	return view, err
 }
 
 // Get возвращает запись пользователя (например, для экрана QR-пропуска).
@@ -185,6 +207,7 @@ func (s *BookingService) notifyPromotion(p *postgres.Promotion) {
 		if err := s.presenter.Promoted(ctx, view); err != nil {
 			log.Printf("waitlist promotion message %s: %v", p.BookingID, err)
 		}
+		s.notifyStudio("promoted", view)
 		s.event(ctx, p.MaxUserID, "waitlist_promoted", map[string]interface{}{"booking_id": p.BookingID})
 	}()
 }
@@ -198,4 +221,18 @@ func (s *BookingService) event(ctx context.Context, maxUserID, kind string, payl
 // LogEvent пишет шаг воронки, который происходит вне записи (старт, подбор, поиск).
 func (s *BookingService) LogEvent(ctx context.Context, maxUserID, kind string, payload map[string]interface{}) {
 	s.event(ctx, maxUserID, kind, payload)
+}
+
+// MarkGoing — клиент ответил «Иду» на напоминание; студия видит подтверждение.
+func (s *BookingService) MarkGoing(ctx context.Context, bookingID, maxUserID string) error {
+	view, err := s.owned(ctx, bookingID, maxUserID)
+	if err != nil {
+		return err
+	}
+	if view.Status != model.BookingStatusConfirmed {
+		return ErrNotActive
+	}
+	s.event(ctx, maxUserID, "reminder_confirmed", map[string]interface{}{"booking_id": bookingID})
+	s.notifyStudio("going", view)
+	return nil
 }

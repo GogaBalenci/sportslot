@@ -44,7 +44,7 @@ func wrap(op string, err error) error {
 	}
 	if errors.Is(err, repository.ErrNotFound) || errors.Is(err, repository.ErrQuotaExceeded) ||
 		errors.Is(err, repository.ErrSlotStarted) || errors.Is(err, repository.ErrNotActive) ||
-		errors.Is(err, repository.ErrAlreadyBooked) {
+		errors.Is(err, repository.ErrAlreadyBooked) || errors.Is(err, repository.ErrBookingClosed) {
 		return err
 	}
 	return fmt.Errorf("%s: %w", op, err)

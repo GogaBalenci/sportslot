@@ -14,13 +14,13 @@ import (
 )
 
 const bookingColumns = `b.id, b.user_id, b.slot_id, b.status, b.source_channel, COALESCE(b.checkin_code, ''),
-	b.reminder_24h_sent OR b.reminder_2h_sent, b.rating, b.created_at, b.cancelled_at, b.attended_at`
+	b.reminder_24h_sent OR b.reminder_2h_sent, b.rating, b.created_at, b.cancelled_at, b.attended_at, b.cancel_reason`
 
 func scanBooking(row pgx.Row) (*model.Booking, error) {
 	var b model.Booking
 	var rating *int16
 	if err := row.Scan(&b.ID, &b.UserID, &b.SlotID, &b.Status, &b.SourceChannel, &b.CheckinCode,
-		&b.ReminderSent, &rating, &b.CreatedAt, &b.CancelledAt, &b.AttendedAt); err != nil {
+		&b.ReminderSent, &rating, &b.CreatedAt, &b.CancelledAt, &b.AttendedAt, &b.CancelReason); err != nil {
 		return nil, err
 	}
 	if rating != nil {
@@ -46,9 +46,10 @@ func scanView(row pgx.Row) (*model.BookingView, error) {
 	v := &bv.Venue
 	sl := &bv.Slot
 	err := row.Scan(&bv.ID, &bv.UserID, &bv.SlotID, &bv.Status, &bv.SourceChannel, &bv.CheckinCode,
-		&bv.ReminderSent, &rating, &bv.CreatedAt, &bv.CancelledAt, &bv.AttendedAt,
+		&bv.ReminderSent, &rating, &bv.CreatedAt, &bv.CancelledAt, &bv.AttendedAt, &bv.CancelReason,
 		&bv.MaxUserID, &bv.UserName,
 		&sl.ID, &sl.VenueID, &sl.Title, &sl.SportType, &sl.Level, &sl.StartAt, &sl.EndAt, &sl.QuotaTotal, &sl.QuotaBooked,
+		&sl.TemplateID, &sl.Closed, &sl.Cancelled,
 		&v.ID, &v.ExternalID, &v.Name, &v.SportType, &v.Sports, &v.Level, &v.Address, &v.District,
 		&v.Lat, &v.Lon, &v.Source, &v.SourceURL, &v.BookingMode, &v.Phone, &v.Website, &v.OpeningHours,
 		&v.Description, &v.WhatToBring, &v.TrialPrice, &v.VerifiedAt, &v.CreatedAt)
@@ -111,9 +112,9 @@ func (s *Store) ListUserBookingViews(ctx context.Context, userID string) ([]mode
 }
 
 // ListVenueBookings — записи в студиях за период, для администратора.
-func (s *Store) ListVenueBookings(ctx context.Context, from, to time.Time, demoOnly bool) ([]model.BookingView, error) {
+func (s *Store) VenueBookings(ctx context.Context, venueIDs []string, from, to time.Time) ([]model.BookingView, error) {
 	return s.queryViews(ctx, `WHERE s.start_at >= $1 AND s.start_at < $2 AND b.status <> 'cancelled'
-		AND (NOT $3 OR v.source = 'demo_partner') ORDER BY s.start_at, u.name`, from, to, demoOnly)
+		AND v.id = ANY($3::uuid[]) ORDER BY s.start_at, u.name`, from, to, venueIDs)
 }
 
 // CreateBooking записывает пользователя на занятие. Повторная запись на то же
@@ -147,10 +148,14 @@ func (s *Store) CreateBooking(ctx context.Context, userID, slotID string, channe
 func bookInTx(ctx context.Context, tx pgx.Tx, userID, slotID string, channel model.SourceChannel) (*model.Booking, error) {
 	var startAt time.Time
 	var total, booked int
-	err := tx.QueryRow(ctx, `SELECT start_at, quota_total, quota_booked FROM slots WHERE id = $1 FOR UPDATE`, slotID).
-		Scan(&startAt, &total, &booked)
+	var closed bool
+	err := tx.QueryRow(ctx, `SELECT start_at, quota_total, quota_booked, booking_closed OR cancelled_at IS NOT NULL
+		FROM slots WHERE id = $1 FOR UPDATE`, slotID).Scan(&startAt, &total, &booked, &closed)
 	if err != nil {
 		return nil, wrap("lock slot", notFound(err))
+	}
+	if closed {
+		return nil, repository.ErrBookingClosed
 	}
 	if !startAt.After(time.Now()) {
 		return nil, repository.ErrSlotStarted
@@ -174,7 +179,7 @@ func bookInTx(ctx context.Context, tx pgx.Tx, userID, slotID string, channel mod
 			INSERT INTO bookings (user_id, slot_id, status, source_channel, checkin_code)
 			VALUES ($1, $2, 'confirmed', $3, $4)
 			RETURNING id, user_id, slot_id, status, source_channel, checkin_code, false, rating,
-				created_at, cancelled_at, attended_at`, userID, slotID, string(channel), code))
+				created_at, cancelled_at, attended_at, cancel_reason`, userID, slotID, string(channel), code))
 		if err == nil {
 			return b, nil
 		}
@@ -225,7 +230,7 @@ func (s *Store) CancelBooking(ctx context.Context, bookingID string) (*Promotion
 	if status != model.BookingStatusConfirmed {
 		return nil, repository.ErrNotActive
 	}
-	if _, err := tx.Exec(ctx, `UPDATE bookings SET status = 'cancelled', cancelled_at = now() WHERE id = $1`, bookingID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE bookings SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'user' WHERE id = $1`, bookingID); err != nil {
 		return nil, wrap("cancel booking", err)
 	}
 	if _, err := tx.Exec(ctx, `UPDATE slots SET quota_booked = GREATEST(quota_booked - 1, 0) WHERE id = $1`, slotID); err != nil {
@@ -294,10 +299,14 @@ func (s *Store) RescheduleBooking(ctx context.Context, bookingID, newSlotID stri
 
 	var startAt time.Time
 	var total, booked int
-	err = tx.QueryRow(ctx, `SELECT start_at, quota_total, quota_booked FROM slots WHERE id = $1 FOR UPDATE`, newSlotID).
-		Scan(&startAt, &total, &booked)
+	var closed bool
+	err = tx.QueryRow(ctx, `SELECT start_at, quota_total, quota_booked, booking_closed OR cancelled_at IS NOT NULL
+		FROM slots WHERE id = $1 FOR UPDATE`, newSlotID).Scan(&startAt, &total, &booked, &closed)
 	if err != nil {
 		return nil, nil, wrap("lock new slot", notFound(err))
+	}
+	if closed {
+		return nil, nil, repository.ErrBookingClosed
 	}
 	if !startAt.After(time.Now()) {
 		return nil, nil, repository.ErrSlotStarted
@@ -331,10 +340,10 @@ func (s *Store) RescheduleBooking(ctx context.Context, bookingID, newSlotID stri
 
 // CheckIn отмечает посещение по коду входа. Возвращает ErrNotActive, если
 // посещение по этому коду уже отмечено, и ErrNotFound, если кода нет.
-func (s *Store) CheckIn(ctx context.Context, code string, demoOnly bool) (*model.BookingView, error) {
+func (s *Store) CheckIn(ctx context.Context, code string, venueIDs []string) (*model.BookingView, error) {
 	views, err := s.queryViews(ctx, `WHERE b.checkin_code = $1 AND b.status IN ('confirmed', 'attended')
-		AND (NOT $2 OR v.source = 'demo_partner')
-		ORDER BY (b.status = 'confirmed') DESC, b.created_at DESC LIMIT 1`, code, demoOnly)
+		AND v.id = ANY($2::uuid[])
+		ORDER BY (b.status = 'confirmed') DESC, b.created_at DESC LIMIT 1`, code, venueIDs)
 	if err != nil {
 		return nil, err
 	}

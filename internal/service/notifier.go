@@ -62,9 +62,10 @@ func (n *Notifier) Tick(ctx context.Context, now time.Time) {
 	if _, err := n.store.MarkNoShows(ctx, now); err != nil {
 		log.Printf("notifier: no-shows: %v", err)
 	}
-	if n.demo && now.Sub(n.lastSync) > 6*time.Hour {
-		if _, err := seed.SyncDemo(ctx, n.store, now); err != nil {
-			log.Printf("notifier: demo schedule: %v", err)
+	// Расписание студий по шаблонам продлевается, чтобы всегда было на две недели вперёд.
+	if now.Sub(n.lastSync) > 6*time.Hour {
+		if _, err := seed.ExpandSchedules(ctx, n.store, now, ""); err != nil {
+			log.Printf("notifier: schedules: %v", err)
 		} else {
 			n.lastSync = now
 		}

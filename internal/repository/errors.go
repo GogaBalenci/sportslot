@@ -10,3 +10,5 @@ var (
 )
 
 var ErrAlreadyBooked = errors.New("user already booked this slot")
+
+var ErrBookingClosed = errors.New("booking for this slot is closed")

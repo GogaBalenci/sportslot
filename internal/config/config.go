@@ -31,10 +31,12 @@ type Config struct {
 	// DGISCatalogURL — геокодер 2ГИС (тот же ключ).
 	DGISCatalogURL string
 
-	CatalogPath      string
-	DemoData         bool
-	PartnerDemoCode  string
-	TestMaxUserIDs   []string
+	CatalogPath     string
+	DemoData        bool
+	PartnerDemoCode string
+	TestMaxUserIDs  []string
+	// PlatformAdminIDs — id пользователей MAX, которые подключают студии и выдают приглашения.
+	PlatformAdminIDs []string
 	InitDataMaxAge   time.Duration
 	NotifierInterval time.Duration
 }
@@ -58,6 +60,7 @@ func Load() (*Config, error) {
 		DemoData:         getEnv("DEMO_DATA", "on") != "off",
 		PartnerDemoCode:  os.Getenv("PARTNER_DEMO_CODE"),
 		TestMaxUserIDs:   splitList(getEnv("TEST_MAX_USER_IDS", "max-test-user-001")),
+		PlatformAdminIDs: splitList(os.Getenv("PLATFORM_ADMIN_IDS")),
 	}
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")

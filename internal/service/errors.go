@@ -13,6 +13,7 @@ var (
 	ErrSlotStarted    = repository.ErrSlotStarted
 	ErrNotActive      = repository.ErrNotActive
 	ErrAlreadyBooked  = repository.ErrAlreadyBooked
+	ErrBookingClosed  = repository.ErrBookingClosed
 	ErrForbidden      = errors.New("booking belongs to another user")
 	ErrExternalVenue  = errors.New("venue has no online booking")
 	ErrInvalidRequest = errors.New("invalid request")

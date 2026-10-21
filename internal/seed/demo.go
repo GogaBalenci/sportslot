@@ -139,11 +139,11 @@ var DemoVenues = []demoVenue{
 	},
 }
 
-// SyncDemo создаёт демо-партнёров и расписание на две недели вперёд.
-// Вызывается при старте и раз в сутки, поэтому демо не устаревает.
+// SyncDemo создаёт демо-партнёров. Их расписание хранится как шаблоны недели
+// (как у настоящих студий) и заполняется из кода только для студии без шаблонов,
+// поэтому правки в кабинете переживают перезапуск.
 func SyncDemo(ctx context.Context, store *postgres.Store, now time.Time) (int, error) {
 	now = now.In(catalog.Moscow)
-	created := 0
 	for _, dv := range DemoVenues {
 		v := dv.venue
 		v.Source = model.VenueSourceDemo
@@ -152,32 +152,33 @@ func SyncDemo(ctx context.Context, store *postgres.Store, now time.Time) (int, e
 		v.Level = "beginner"
 		v.Description = demoNote
 		if err := store.UpsertVenue(ctx, &v); err != nil {
-			return created, fmt.Errorf("demo venue %s: %w", v.Name, err)
+			return 0, fmt.Errorf("demo venue %s: %w", v.Name, err)
 		}
-		for day := 0; day <= 14; day++ {
-			date := now.AddDate(0, 0, day)
-			for _, l := range dv.lessons {
-				if !hasDay(l.days, date.Weekday()) {
-					continue
+		n, err := store.CountTemplates(ctx, v.ID)
+		if err != nil {
+			return 0, err
+		}
+		if n > 0 {
+			continue
+		}
+		for _, l := range dv.lessons {
+			for _, day := range l.days {
+				t := &model.Template{
+					ID:      stableID(fmt.Sprintf("tpl|%s|%s|%d|%02d:%02d", v.ID, l.title, day, l.hour, l.minute)),
+					VenueID: v.ID, Weekday: int(day), StartMinute: l.hour*60 + l.minute,
+					DurationMin: int(l.duration.Minutes()), Title: l.title, SportType: l.sport, Level: "beginner", Quota: l.quota,
 				}
-				start := time.Date(date.Year(), date.Month(), date.Day(), l.hour, l.minute, 0, 0, catalog.Moscow)
-				if !start.After(now) {
-					continue
+				if err := store.SaveTemplate(ctx, t); err != nil {
+					return 0, fmt.Errorf("demo template %s: %w", l.title, err)
 				}
-				id := stableID(v.ID + "|" + l.title + "|" + start.Format(time.RFC3339))
-				slot := &model.Slot{
-					ID: id, VenueID: v.ID, Title: l.title, SportType: l.sport, Level: "beginner",
-					StartAt: start, EndAt: start.Add(l.duration),
-					QuotaTotal: l.quota, QuotaBooked: prebooked(id, l.quota),
-				}
-				if err := store.InsertSlotIfAbsent(ctx, slot); err != nil {
-					return created, err
-				}
-				created++
 			}
 		}
 	}
 
+	created, err := ExpandSchedules(ctx, store, now, "")
+	if err != nil {
+		return created, err
+	}
 	for i, id := range []string{ReferenceSlotOne, ReferenceSlotTwo} {
 		date := now.AddDate(0, 0, 2+i)
 		start := time.Date(date.Year(), date.Month(), date.Day(), 20, 30, 0, 0, catalog.Moscow)
@@ -188,6 +189,48 @@ func SyncDemo(ctx context.Context, store *postgres.Store, now time.Time) (int, e
 		}
 	}
 	return created, store.EnsureUserWithID(ctx, TestUserID, TestMaxUserID, "Тестовый пользователь")
+}
+
+// ExpandSchedules разворачивает шаблоны студий на две недели вперёд.
+// venueID пустой — для всех студий с онлайн-записью. Id занятия зависит от
+// студии, названия и времени, поэтому повторный запуск ничего не дублирует.
+func ExpandSchedules(ctx context.Context, store *postgres.Store, now time.Time, venueID string) (int, error) {
+	now = now.In(catalog.Moscow)
+	templates, err := store.ActiveTemplates(ctx, venueID)
+	if err != nil {
+		return 0, err
+	}
+	created := 0
+	for _, t := range templates {
+		for day := 0; day <= 14; day++ {
+			date := now.AddDate(0, 0, day)
+			if int(date.Weekday()) != t.Weekday {
+				continue
+			}
+			start := time.Date(date.Year(), date.Month(), date.Day(), t.StartMinute/60, t.StartMinute%60, 0, 0, catalog.Moscow)
+			if !start.After(now) {
+				continue
+			}
+			id := stableID(t.VenueID + "|" + t.Title + "|" + start.Format(time.RFC3339))
+			booked := 0
+			if t.Source == model.VenueSourceDemo {
+				booked = prebooked(id, t.Quota)
+			}
+			slot := &model.Slot{
+				ID: id, VenueID: t.VenueID, Title: t.Title, SportType: t.SportType, Level: t.Level,
+				StartAt: start, EndAt: start.Add(time.Duration(t.DurationMin) * time.Minute),
+				QuotaTotal: t.Quota, QuotaBooked: booked, TemplateID: t.ID,
+			}
+			added, err := store.InsertTemplateSlot(ctx, slot)
+			if err != nil {
+				return created, err
+			}
+			if added {
+				created++
+			}
+		}
+	}
+	return created, nil
 }
 
 func hasDay(days []time.Weekday, d time.Weekday) bool {

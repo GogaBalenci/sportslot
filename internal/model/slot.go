@@ -13,6 +13,10 @@ type Slot struct {
 	EndAt       time.Time `json:"end_at"`
 	QuotaTotal  int       `json:"quota_total"`
 	QuotaBooked int       `json:"quota_booked"`
+	TemplateID  string    `json:"template_id,omitempty"`
+	// Closed — студия приостановила запись; Cancelled — занятие отменено.
+	Closed    bool `json:"closed,omitempty"`
+	Cancelled bool `json:"cancelled,omitempty"`
 }
 
 func (s *Slot) QuotaAvailable() int {

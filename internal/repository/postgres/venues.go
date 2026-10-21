@@ -25,6 +25,16 @@ func scanVenue(row pgx.Row) (*model.Venue, error) {
 
 // UpsertVenue создаёт или обновляет площадку по id.
 func (s *Store) UpsertVenue(ctx context.Context, v *model.Venue) error {
+	return s.upsertVenue(ctx, v, "")
+}
+
+// UpsertCatalogVenue обновляет площадку из выгрузки OpenStreetMap, но не трогает
+// залы, которые уже подключены к онлайн-записи как студии-партнёры.
+func (s *Store) UpsertCatalogVenue(ctx context.Context, v *model.Venue) error {
+	return s.upsertVenue(ctx, v, " WHERE venues.source = 'osm'")
+}
+
+func (s *Store) upsertVenue(ctx context.Context, v *model.Venue, where string) error {
 	var externalID interface{}
 	if v.ExternalID != "" {
 		externalID = v.ExternalID
@@ -42,7 +52,7 @@ func (s *Store) UpsertVenue(ctx context.Context, v *model.Venue) error {
 			booking_mode = EXCLUDED.booking_mode, phone = EXCLUDED.phone, website = EXCLUDED.website,
 			opening_hours = EXCLUDED.opening_hours, description = EXCLUDED.description,
 			what_to_bring = EXCLUDED.what_to_bring, trial_price = EXCLUDED.trial_price,
-			verified_at = EXCLUDED.verified_at`,
+			verified_at = EXCLUDED.verified_at`+where,
 		v.ID, externalID, v.Name, v.SportType, v.Sports, v.Level, v.Address, v.District, v.Lat, v.Lon,
 		string(v.Source), v.SourceURL, string(v.BookingMode), v.Phone, v.Website, v.OpeningHours,
 		v.Description, v.WhatToBring, v.TrialPrice, v.VerifiedAt)

@@ -80,7 +80,7 @@ func LoadCatalog(ctx context.Context, store *postgres.Store, path string) (*Cata
 			OpeningHours: cv.OpeningHours,
 			VerifiedAt:   &exported,
 		}
-		if err := store.UpsertVenue(ctx, v); err != nil {
+		if err := store.UpsertCatalogVenue(ctx, v); err != nil {
 			return nil, fmt.Errorf("venue %s: %w", cv.ExternalID, err)
 		}
 		ids = append(ids, v.ID)

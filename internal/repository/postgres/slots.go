@@ -9,12 +9,13 @@ import (
 	"sportslot/internal/model"
 )
 
-const slotColumns = `s.id, s.venue_id, s.title, s.sport_type, s.level, s.start_at, s.end_at, s.quota_total, s.quota_booked`
+const slotColumns = `s.id, s.venue_id, s.title, s.sport_type, s.level, s.start_at, s.end_at, s.quota_total, s.quota_booked,
+	COALESCE(s.template_id::text, ''), s.booking_closed, s.cancelled_at IS NOT NULL`
 
 func scanSlot(row pgx.Row) (*model.Slot, error) {
 	var sl model.Slot
 	if err := row.Scan(&sl.ID, &sl.VenueID, &sl.Title, &sl.SportType, &sl.Level, &sl.StartAt, &sl.EndAt,
-		&sl.QuotaTotal, &sl.QuotaBooked); err != nil {
+		&sl.QuotaTotal, &sl.QuotaBooked, &sl.TemplateID, &sl.Closed, &sl.Cancelled); err != nil {
 		return nil, err
 	}
 	return &sl, nil
@@ -51,6 +52,8 @@ type SlotQuery struct {
 	Sport         string
 	From, To      time.Time
 	OnlyAvailable bool
+	// IncludeHidden — показывать закрытые для записи и отменённые занятия (кабинет студии).
+	IncludeHidden bool
 }
 
 func (s *Store) ListSlots(ctx context.Context, q SlotQuery) ([]model.Slot, error) {
@@ -59,7 +62,8 @@ func (s *Store) ListSlots(ctx context.Context, q SlotQuery) ([]model.Slot, error
 		  AND ($2 = '' OR s.sport_type = $2)
 		  AND s.start_at >= $3 AND s.start_at < $4
 		  AND (NOT $5 OR s.quota_booked < s.quota_total)
-		ORDER BY s.start_at, s.title`, q.VenueIDs, q.Sport, q.From, q.To, q.OnlyAvailable)
+		  AND ($6 OR (NOT s.booking_closed AND s.cancelled_at IS NULL))
+		ORDER BY s.start_at, s.title`, q.VenueIDs, q.Sport, q.From, q.To, q.OnlyAvailable, q.IncludeHidden)
 	if err != nil {
 		return nil, wrap("list slots", err)
 	}
@@ -80,6 +84,7 @@ func (s *Store) FindSlotNextWeek(ctx context.Context, sl *model.Slot) (*model.Sl
 	next, err := scanSlot(s.pool.QueryRow(ctx, `SELECT `+slotColumns+` FROM slots s
 		WHERE s.venue_id = $1 AND s.title = $2
 		  AND s.start_at BETWEEN $3 AND $4 AND s.quota_booked < s.quota_total
+		  AND NOT s.booking_closed AND s.cancelled_at IS NULL
 		ORDER BY abs(extract(epoch FROM s.start_at - $5)) LIMIT 1`,
 		sl.VenueID, sl.Title, sl.StartAt.Add(6*24*time.Hour), sl.StartAt.Add(8*24*time.Hour),
 		sl.StartAt.Add(7*24*time.Hour)))
