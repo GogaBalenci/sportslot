@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -100,4 +101,31 @@ func (s *Store) FunnelStats(ctx context.Context, since time.Time) (map[string]in
 		stats[kind] = n
 	}
 	return stats, rows.Err()
+}
+
+type Location struct {
+	Lat       float64   `json:"lat"`
+	Lon       float64   `json:"lon"`
+	Address   string    `json:"address,omitempty"`
+	UpdatedAt time.Time `json:"at"`
+}
+
+func (s *Store) SaveLocation(ctx context.Context, maxUserID string, lat, lon float64, address string) error {
+	_, err := s.pool.Exec(ctx, `INSERT INTO user_locations (max_user_id, lat, lon, address, updated_at)
+		VALUES ($1, $2, $3, $4, now())
+		ON CONFLICT (max_user_id) DO UPDATE SET lat = EXCLUDED.lat, lon = EXCLUDED.lon,
+			address = EXCLUDED.address, updated_at = now()`, maxUserID, lat, lon, address)
+	return wrap("save location", err)
+}
+
+// LastLocation — последняя точка пользователя, если она не старше maxAge.
+func (s *Store) LastLocation(ctx context.Context, maxUserID string, maxAge time.Duration) (*Location, error) {
+	var l Location
+	err := s.pool.QueryRow(ctx, `SELECT lat, lon, address, updated_at FROM user_locations
+		WHERE max_user_id = $1 AND updated_at > now() - $2::interval`, maxUserID, fmt.Sprintf("%d seconds", int(maxAge.Seconds()))).
+		Scan(&l.Lat, &l.Lon, &l.Address, &l.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return &l, wrap("last location", err)
 }
