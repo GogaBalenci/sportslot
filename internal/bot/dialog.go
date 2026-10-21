@@ -626,7 +626,12 @@ func (b *Bot) venueSlots(ctx context.Context, in Incoming, venueID, sport string
 		return
 	}
 	if len(slots) == 0 {
-		b.reply(ctx, in, "<b>"+esc(venue.Name)+"</b>\nНа ближайшие две недели занятий нет.", mc.Keyboard{{mc.Callback("В начало", "menu")}})
+		text, kb := "<b>"+esc(venue.Name)+"</b>\nНа ближайшие две недели занятий нет.", mc.Keyboard{{mc.Callback("В начало", "menu")}}
+		if venue.BookingMode == model.BookingModeInstant {
+			text += " Можно спросить студию, когда появятся."
+			kb = append(mc.Keyboard{{mc.Callback("Написать студии", "msg:"+venue.ID)}}, kb...)
+		}
+		b.reply(ctx, in, text, kb)
 		return
 	}
 	kb := mc.Keyboard{}
@@ -641,7 +646,11 @@ func (b *Bot) venueSlots(ctx context.Context, in Incoming, venueID, sport string
 			kb = append(kb, []mc.Button{mc.Callback("Мест нет, в очередь · "+buttonTime(sl.StartAt), "wl:"+sl.ID)})
 		}
 	}
-	kb = append(kb, []mc.Button{mc.OpenApp("Всё расписание", "venue_"+venue.ID)})
+	last := []mc.Button{mc.OpenApp("Всё расписание", "venue_"+venue.ID)}
+	if venue.BookingMode == model.BookingModeInstant {
+		last = append(last, mc.Callback("Написать студии", "msg:"+venue.ID))
+	}
+	kb = append(kb, last)
 	b.reply(ctx, in, "🗓 <b>"+esc(venue.Name)+"</b>\nБлижайшие занятия — выбери удобное:", kb)
 }
 

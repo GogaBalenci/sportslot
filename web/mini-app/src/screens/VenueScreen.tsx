@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Globe, MapPin, Navigation, Phone } from 'lucide-react'
+import { Globe, MapPin, MessageCircle, Navigation, Phone } from 'lucide-react'
 import { api, type Booking, type SlotInfo, type VenueDetails } from '../api'
 import { AccessBadge, BookingSheet, Btn, Empty, ErrorBlock, Loader, SlotPill, SportBadge, districtTitle } from '../components'
 import { catalogDate, dayKey, dayNumber, dayTitle, hours, nextDays, routeUrl, trial } from '../format'
@@ -67,6 +67,11 @@ export function VenueScreen({ id, reschedule }: { id: string; reschedule?: strin
             <a className="btn btn--secondary btn--md" href={`tel:${venue.phone.replace(/[^+\d]/g, '')}`}>
               <Phone size={18} /><span>Позвонить</span>
             </a>
+          )}
+          {venue.booking_mode === 'instant' && (
+            <Btn variant="secondary" icon={<MessageCircle size={18} />} onClick={() => nav.push({ name: 'chat', venueId: venue.id, venueName: venue.name })}>
+              Написать
+            </Btn>
           )}
         </div>
       </header>
