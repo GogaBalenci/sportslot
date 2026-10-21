@@ -105,7 +105,7 @@ export function TicketScreen({ id, fresh }: { id: string; fresh?: boolean }) {
       {active && (
         <div className="stack">
           {b.venue.what_to_bring && <div className="info-card"><p className="muted">Что взять: {b.venue.what_to_bring}</p></div>}
-          <Btn size="lg" block icon={<Navigation size={18} />} onClick={() => openExternal(routeUrl(b.venue.lat, b.venue.lon))}>Как добраться</Btn>
+          <Btn size="lg" block icon={<Navigation size={18} />} onClick={() => openExternal(routeUrl(b.venue.lat, b.venue.lon, nav.origin))}>Как добраться</Btn>
           <Btn size="lg" variant="secondary" block onClick={() => nav.push({ name: 'venue', id: b.venue.id, reschedule: b.id })}>Перенести</Btn>
           {confirmCancel ? (
             <div className="confirm">

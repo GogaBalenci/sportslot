@@ -37,10 +37,13 @@ export type TravelMode = 'walking' | 'transit' | 'driving'
 
 export type Travel = { mode: TravelMode; minutes: number; estimated: boolean }
 
+export type LastLocation = { lat: number; lon: number; address?: string; at: string }
+
 export type VenueCard = {
   venue: Venue
   distance_km: number
   travel?: Travel
+  beyond_limit?: boolean
   slots: SlotInfo[]
   available_slots: number
 }
@@ -134,7 +137,9 @@ export const api = {
   venue: (id: string) => request<VenueDetails>('GET', `/venues/${id}`),
   recommend: (answers: Record<string, string>) => request<{ results: QuizResult[] }>('POST', '/quiz/recommend', { answers }),
 
-  me: () => user<{ user: { id: string; name: string }; bookings: Booking[] }>('GET', '/me'),
+  me: () =>
+    user<{ user: { id: string; name: string }; bookings: Booking[]; last_location?: LastLocation }>('GET', '/me'),
+  geocode: (q: string) => request<{ lat: number; lon: number; address: string }>('GET', `/geocode?q=${encodeURIComponent(q)}`),
   book: (slotId: string) => user<Booking>('POST', '/bookings', { slot_id: slotId, source_channel: 'miniapp' }),
   booking: (id: string) => user<Booking>('GET', `/bookings/${id}`),
   cancel: (id: string) => user<void>('POST', `/bookings/${id}/cancel`),

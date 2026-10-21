@@ -4,6 +4,7 @@ import { api, type Booking, type SlotInfo, type TravelMode, type Venue, type Ven
 import { AddressInput } from '../AddressInput'
 import { BookingSheet, Btn, Chips, Empty, ErrorBlock, Loader, Logo, NextWorkout, VenueCardView, modeIcon } from '../components'
 import { travelModeTitle } from '../format'
+import { TimeSlider } from '../TimeSlider'
 import { MapView } from '../MapView'
 import { userFirstName } from '../max'
 import { useNav } from '../nav'
@@ -11,13 +12,7 @@ import { useNav } from '../nav'
 type Point = { lat: number; lon: number; label: string }
 
 const modes: TravelMode[] = ['transit', 'walking', 'driving']
-const limits = [
-  { id: '10', title: 'до 10 мин' },
-  { id: '15', title: 'до 15 мин' },
-  { id: '20', title: 'до 20 мин' },
-  { id: '30', title: 'до 30 мин' },
-  { id: '0', title: 'Не важно' },
-]
+
 
 export function SearchScreen({ initialSport }: { initialSport?: string }) {
   const nav = useNav()
@@ -32,7 +27,13 @@ export function SearchScreen({ initialSport }: { initialSport?: string }) {
   const [picked, setPicked] = useState<{ venue: Venue; slot: SlotInfo } | null>(null)
   const [locating, setLocating] = useState(false)
   const [mode, setMode] = useState<TravelMode>('transit')
-  const [limit, setLimit] = useState('20')
+  const [limit, setLimit] = useState(20)
+  // Значение ползунка применяется с паузой, чтобы не искать на каждом шаге.
+  const [limitDraft, setLimitDraft] = useState(20)
+  useEffect(() => {
+    const t = window.setTimeout(() => setLimit(limitDraft), 300)
+    return () => window.clearTimeout(t)
+  }, [limitDraft])
   const [next, setNext] = useState<Booking | null>(null)
 
   useEffect(() => {
@@ -58,7 +59,7 @@ export function SearchScreen({ initialSport }: { initialSport?: string }) {
         lat: me?.lat,
         lon: me?.lon,
         mode: me ? mode : undefined,
-        max_minutes: me ? Number(limit) : undefined,
+        max_minutes: me ? limit : undefined,
       })
       .then((r) => setCards(r.venues))
       .catch((e) => setError(e.message))
@@ -66,32 +67,53 @@ export function SearchScreen({ initialSport }: { initialSport?: string }) {
 
   useEffect(load, [load])
 
+  useEffect(() => {
+    nav.setOrigin(me ? { lat: me.lat, lon: me.lon, mode } : null)
+  }, [me, mode])
+
+  // В клиенте MAX на телефоне геолокация браузера доступна не всегда: тогда
+  // берём точку, которую пользователь отправлял боту в чат.
+  async function fromChat(): Promise<boolean> {
+    try {
+      const loc = (await api.me()).last_location
+      if (!loc) return false
+      setMe({ lat: loc.lat, lon: loc.lon, label: loc.address ? `${loc.address} (из чата)` : 'Геолокация из чата' })
+      setDistrict('')
+      return true
+    } catch {
+      return false
+    }
+  }
+
   function locate() {
-    if (!navigator.geolocation) {
-      nav.toast('Геолокация недоступна — выбери район')
-      return
+    const fail = async () => {
+      const ok = await fromChat()
+      setLocating(false)
+      if (!ok) nav.toast('Не получилось определить местоположение. Введи адрес или отправь геолокацию боту в чат — она появится здесь')
     }
     setLocating(true)
+    if (!navigator.geolocation) {
+      void fail()
+      return
+    }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLocating(false)
         setMe({ lat: pos.coords.latitude, lon: pos.coords.longitude, label: 'Моё местоположение' })
         setDistrict('')
       },
-      () => {
-        setLocating(false)
-        nav.toast('Не удалось определить местоположение — выбери район')
-      },
-      { timeout: 8000, maximumAge: 300000 },
+      () => void fail(),
+      { timeout: 7000, maximumAge: 300000 },
     )
   }
 
   const sports = [{ id: '', title: 'Все' }, ...(catalog?.sports.filter((s) => s.id !== 'multi').map((s) => ({ id: s.id, title: s.title })) ?? [])]
-  const bookable = cards?.filter((c) => c.venue.booking_mode === 'instant') ?? []
-  const other = cards?.filter((c) => c.venue.booking_mode !== 'instant') ?? []
+  const bookable = cards?.filter((c) => c.venue.booking_mode === 'instant' && !c.beyond_limit) ?? []
+  const other = cards?.filter((c) => c.venue.booking_mode !== 'instant' && !c.beyond_limit) ?? []
+  const farther = cards?.filter((c) => c.beyond_limit) ?? []
   const onSelect = useCallback((id: string) => nav.push({ name: 'venue', id }), [nav])
   const name = userFirstName()
-  const canWiden = !!me && limit !== '0' && Number(limit) < 60
+  const canWiden = !!me && limit < 60
 
   return (
     <div className="screen">
@@ -140,7 +162,7 @@ export function SearchScreen({ initialSport }: { initialSport?: string }) {
                 )
               })}
             </div>
-            <Chips items={limits} value={limit} onChange={setLimit} tone="navy" />
+            <TimeSlider value={limitDraft} onChange={setLimitDraft} label={travelModeTitle(mode)} />
           </>
         )}
       </section>
@@ -169,7 +191,7 @@ export function SearchScreen({ initialSport }: { initialSport?: string }) {
             <Empty
               title={`За ${limit} мин ${travelModeTitle(mode)} ничего не нашлось`}
               text="Попробуй увеличить время в пути или выбрать другой способ."
-              action={<Btn onClick={() => setLimit(String(Math.min(Number(limit) * 2, 60)))}>Искать до {Math.min(Number(limit) * 2, 60)} мин</Btn>}
+              action={<Btn onClick={() => setLimitDraft(Math.min(limit * 2, 60))}>Искать до {Math.min(limit * 2, 60)} мин</Btn>}
             />
           )}
           {cards.length === 0 && !canWiden && (
@@ -186,6 +208,15 @@ export function SearchScreen({ initialSport }: { initialSport?: string }) {
           {other.length > 0 && <h2 className="h2 section">Ещё залы рядом</h2>}
           {other.slice(0, 30).map((c) => (
             <VenueCardView key={c.venue.id} card={c} sport={sport} onSlot={() => undefined} />
+          ))}
+          {farther.length > 0 && (
+            <>
+              <h2 className="h2 section">Чуть дальше</h2>
+              <p className="muted small">В пределах {limit} мин нашлось немного — вот ближайшие залы за этой границей.</p>
+            </>
+          )}
+          {farther.map((c) => (
+            <VenueCardView key={c.venue.id} card={c} sport={sport} onSlot={(venue, slot) => setPicked({ venue, slot })} />
           ))}
         </>
       )}

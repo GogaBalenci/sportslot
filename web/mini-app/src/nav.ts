@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { Catalog } from './api'
+import type { Catalog, TravelMode } from './api'
 
 export type Route =
   | { name: 'search'; sport?: string }
@@ -9,8 +9,14 @@ export type Route =
   | { name: 'venue'; id: string; reschedule?: string }
   | { name: 'ticket'; id: string; fresh?: boolean }
 
+// Origin — откуда пользователь добирается: подставляется в ссылки маршрута,
+// чтобы Яндекс Карты не спрашивали точку старта.
+export type Origin = { lat: number; lon: number; mode: TravelMode }
+
 export type Nav = {
   catalog: Catalog | null
+  origin: Origin | null
+  setOrigin: (o: Origin | null) => void
   push: (r: Route) => void
   tab: (r: Route) => void
   back: () => void

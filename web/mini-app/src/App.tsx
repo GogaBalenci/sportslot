@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarCheck, ChevronLeft, Search, Sparkles } from 'lucide-react'
 import { api, type Catalog } from './api'
 import { insideMax, setBackButton, startParam } from './max'
-import { NavContext, routeFromStart, type Nav, type Route } from './nav'
+import { NavContext, routeFromStart, type Nav, type Origin, type Route } from './nav'
 import { MyScreen } from './screens/MyScreen'
 import { PartnerScreen } from './screens/PartnerScreen'
 import { QuizScreen } from './screens/QuizScreen'
@@ -28,6 +28,21 @@ export default function App() {
   const [catalog, setCatalog] = useState<Catalog | null>(null)
   const [toast, setToast] = useState('')
   const toastTimer = useRef<number>()
+  const [origin, setOrigin] = useState<Origin | null>(() => {
+    try {
+      return JSON.parse(sessionStorage.getItem('origin') ?? 'null')
+    } catch {
+      return null
+    }
+  })
+  const saveOrigin = useCallback((o: Origin | null) => {
+    setOrigin(o)
+    try {
+      sessionStorage.setItem('origin', JSON.stringify(o))
+    } catch {
+      /* хранилище недоступно — точка живёт до закрытия экрана */
+    }
+  }, [])
 
   useEffect(() => {
     api.catalog().then(setCatalog).catch(() => setToast('Сервис временно недоступен'))
@@ -37,6 +52,8 @@ export default function App() {
   const nav: Nav = useMemo(
     () => ({
       catalog,
+      origin,
+      setOrigin: saveOrigin,
       push: (r) => setStack((s) => [...s, r]),
       tab: (r) => setStack([r]),
       back,
@@ -46,7 +63,7 @@ export default function App() {
         toastTimer.current = window.setTimeout(() => setToast(''), 3500)
       },
     }),
-    [catalog, back],
+    [catalog, back, origin, saveOrigin],
   )
 
   useEffect(() => {

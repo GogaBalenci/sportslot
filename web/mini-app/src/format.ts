@@ -52,7 +52,13 @@ export function trial(price?: number): string {
 
 export const code = (c: string) => (c.length === 6 ? `${c.slice(0, 3)} ${c.slice(3)}` : c)
 
-export const routeUrl = (lat: number, lon: number) => `https://yandex.ru/maps/?rtext=~${lat},${lon}&rtt=auto`
+const rtt = { walking: 'pd', transit: 'mt', driving: 'auto' } as const
+
+// routeUrl — маршрут в Яндекс Картах; с точкой старта карта не спрашивает, откуда ехать.
+export function routeUrl(lat: number, lon: number, from?: { lat: number; lon: number; mode: keyof typeof rtt } | null): string {
+  if (!from) return `https://yandex.ru/maps/?rtext=~${lat},${lon}&rtt=auto`
+  return `https://yandex.ru/maps/?rtext=${from.lat.toFixed(6)},${from.lon.toFixed(6)}~${lat},${lon}&rtt=${rtt[from.mode]}`
+}
 
 const osmDays: [RegExp, string][] = [
   [/Mo/g, 'пн'], [/Tu/g, 'вт'], [/We/g, 'ср'], [/Th/g, 'чт'], [/Fr/g, 'пт'], [/Sa/g, 'сб'], [/Su/g, 'вс'],

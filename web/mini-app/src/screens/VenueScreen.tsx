@@ -61,7 +61,7 @@ export function VenueScreen({ id, reschedule }: { id: string; reschedule?: strin
         <h1 className="h1">{venue.name}</h1>
         {place && <div className="meta"><MapPin size={14} /><span>{place}</span></div>}
         <div className="row row--wrap">
-          <Btn variant="secondary" icon={<Navigation size={18} />} onClick={() => openExternal(routeUrl(venue.lat, venue.lon))}>Маршрут</Btn>
+          <Btn variant="secondary" icon={<Navigation size={18} />} onClick={() => openExternal(routeUrl(venue.lat, venue.lon, nav.origin))}>Маршрут</Btn>
           {website && <Btn variant="secondary" icon={<Globe size={18} />} onClick={() => openExternal(website)}>Сайт</Btn>}
           {venue.phone && (
             <a className="btn btn--secondary btn--md" href={`tel:${venue.phone.replace(/[^+\d]/g, '')}`}>

@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { MapPin, Search } from 'lucide-react'
+import { ApiError, api } from './api'
 import { Btn } from './components'
 import { geocodeAddress, hasMapKey, hasSuggestKey, suggestAddress, type AddressSuggestion } from './ymaps'
 
 type Props = { onPick: (point: { lat: number; lon: number; label: string }) => void; onError: (text: string) => void }
 
-// Ввод адреса для расчёта времени в пути. С ключом Геосаджеста показываются
-// подсказки; без него адрес ищется по кнопке. Запросы к подсказкам — не чаще
-// чем после паузы в наборе и от трёх символов, чтобы не расходовать лимит.
+// Ввод адреса для расчёта времени в пути. Подсказки — Геосаджест Яндекса
+// (если задан ключ), координаты — геокодер 2ГИС на сервере, Яндекс — запасной.
+// Подсказки запрашиваются после паузы в наборе и от трёх символов.
 export function AddressInput({ onPick, onError }: Props) {
   const [text, setText] = useState('')
   const [items, setItems] = useState<AddressSuggestion[]>([])
@@ -29,20 +30,29 @@ export function AddressInput({ onPick, onError }: Props) {
     return () => window.clearTimeout(timer.current)
   }, [text])
 
-  if (!hasMapKey()) return null
+  async function locate(query: string): Promise<{ lat: number; lon: number; address?: string } | null> {
+    try {
+      return await api.geocode(query)
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return null
+      if (!hasMapKey()) throw e
+      return geocodeAddress(query)
+    }
+  }
 
   async function resolve(query: string, label: string) {
+    if (query.trim().length < 3) return
     setBusy(true)
     setItems([])
     try {
-      const point = await geocodeAddress(query)
+      const point = await locate(query)
       if (!point) {
-        onError('Не нашли такой адрес в Ростове')
+        onError('Не нашли такой адрес в Ростове — уточни улицу и дом')
         return
       }
       picked.current = label
       setText(label)
-      onPick({ ...point, label })
+      onPick({ lat: point.lat, lon: point.lon, label })
     } catch {
       onError('Поиск адреса сейчас недоступен — используй геолокацию или район')
     } finally {
@@ -59,13 +69,12 @@ export function AddressInput({ onPick, onError }: Props) {
             className="input input--icon"
             placeholder="Адрес: дом, работа, учёба"
             value={text}
+            enterKeyHint="search"
             onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && text.trim() && resolve(text.trim(), text.trim())}
+            onKeyDown={(e) => e.key === 'Enter' && resolve(text.trim(), text.trim())}
           />
         </div>
-        {!hasSuggestKey() && (
-          <Btn variant="secondary" loading={busy} disabled={!text.trim()} icon={<Search size={18} />} onClick={() => resolve(text.trim(), text.trim())} />
-        )}
+        <Btn variant="secondary" loading={busy} disabled={text.trim().length < 3} icon={<Search size={18} />} onClick={() => resolve(text.trim(), text.trim())} />
       </div>
       {items.length > 0 && (
         <div className="address__list">

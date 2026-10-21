@@ -226,7 +226,7 @@ export function BookingSheet(props: { venue: Venue; slot: SlotInfo; reschedule?:
             {props.reschedule ? 'Перенести сюда' : 'Записаться'}
           </Btn>
         )}
-        <Btn size="lg" variant="secondary" block icon={<Navigation size={18} />} onClick={() => openExternal(routeUrl(venue.lat, venue.lon))}>
+        <Btn size="lg" variant="secondary" block icon={<Navigation size={18} />} onClick={() => openExternal(routeUrl(venue.lat, venue.lon, nav.origin))}>
           Как добраться
         </Btn>
       </div>
@@ -246,7 +246,7 @@ export function NextWorkout({ booking }: { booking: Booking }) {
       </div>
       <div className="next__actions">
         <Btn variant="primary" icon={<QrCode size={18} />} onClick={() => nav.push({ name: 'ticket', id: booking.id })}>QR-пропуск</Btn>
-        <Btn variant="light" icon={<Navigation size={18} />} onClick={() => openExternal(routeUrl(booking.venue.lat, booking.venue.lon))}>Маршрут</Btn>
+        <Btn variant="light" icon={<Navigation size={18} />} onClick={() => openExternal(routeUrl(booking.venue.lat, booking.venue.lon, nav.origin))}>Маршрут</Btn>
       </div>
     </section>
   )
