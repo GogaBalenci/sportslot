@@ -17,6 +17,7 @@ type Dependencies struct {
 	Search        *service.SearchService
 	Bookings      *service.BookingService
 	Partner       *service.PartnerService
+	Studio        *service.StudioService
 	Geocoder      *geocode.Geocoder
 	Bot           *bot.Bot
 	Auth          UserAuth
@@ -31,7 +32,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	r.Use(RequestLogger)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins: deps.CORSOrigins,
-		AllowedMethods: []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+		AllowedMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders: []string{"Content-Type", "Authorization", "X-MAX-User-ID", "X-MAX-User-Name"},
 		MaxAge:         300,
 	}))
@@ -41,6 +42,8 @@ func NewRouter(deps Dependencies) http.Handler {
 		search:   deps.Search,
 		bookings: deps.Bookings,
 		partner:  deps.Partner,
+		studio:   deps.Studio,
+		auth:     deps.Auth,
 		geocoder: deps.Geocoder,
 		logins:   newLimiter(10, time.Minute),
 		lookups:  newLimiter(40, time.Minute),
@@ -81,6 +84,39 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.Post("/bookings/{id}/feedback", api.Feedback)
 			r.Get("/bookings/user/{user_id}", api.ListByUser)
 			r.Post("/waitlist", api.Waitlist)
+			r.Post("/me/location", api.SaveLocation)
+			r.Get("/messages", api.ClientMessages)
+			r.Post("/messages", api.ClientSendMessage)
+			r.Post("/studio/invites/accept", api.AcceptInvite)
+		})
+
+		r.Get("/studio/me", api.StudioMe)
+		r.Group(func(r chi.Router) {
+			r.Use(api.requireStudio)
+			r.Post("/studio/checkin", api.StudioCheckIn)
+			r.Get("/studio/bookings/{bookingID}", api.StudioBooking)
+			r.Post("/studio/bookings/{bookingID}/remind", api.StudioRemind)
+			r.Get("/studio/messages/{messageID}", api.StudioMessageRef)
+			r.Route("/studio/{venueID}", func(r chi.Router) {
+				r.Get("/bookings", api.StudioBookings)
+				r.Get("/templates", api.StudioTemplates)
+				r.Post("/templates", api.StudioSaveTemplate)
+				r.Put("/templates/{templateID}", api.StudioSaveTemplate)
+				r.Delete("/templates/{templateID}", api.StudioDeleteTemplate)
+				r.Get("/slots", api.StudioSlots)
+				r.Post("/slots/{slotID}/close", api.StudioCloseSlot)
+				r.Post("/slots/{slotID}/cancel", api.StudioCancelSlot)
+				r.Get("/stats", api.StudioStats)
+				r.Patch("/profile", api.StudioProfile)
+				r.Get("/threads", api.StudioThreads)
+				r.Get("/threads/{userID}", api.StudioThread)
+				r.Post("/threads/{userID}", api.StudioReply)
+			})
+			r.Get("/platform/studios", api.PlatformStudios)
+			r.Get("/platform/catalog", api.PlatformCatalog)
+			r.Post("/platform/studios", api.PlatformAddStudio)
+			r.Post("/platform/studios/{venueID}/invites", api.PlatformInvite)
+			r.Delete("/platform/studios/{venueID}/admins/{maxUserID}", api.PlatformRemoveAdmin)
 		})
 
 		r.Post("/partner/login", api.PartnerLogin)
@@ -92,6 +128,7 @@ func NewRouter(deps Dependencies) http.Handler {
 		})
 	})
 	if deps.Bot != nil {
+		api.location = deps.Bot
 		webhook := &BotWebhook{bot: deps.Bot, secret: deps.WebhookSecret}
 		r.Post("/bot/webhook", webhook.Handle)
 	}

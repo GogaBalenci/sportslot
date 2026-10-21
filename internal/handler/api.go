@@ -23,6 +23,9 @@ type API struct {
 	search   *service.SearchService
 	bookings *service.BookingService
 	partner  *service.PartnerService
+	studio   *service.StudioService
+	auth     UserAuth
+	location LocationListener
 	geocoder *geocode.Geocoder
 	logins   *limiter
 	lookups  *limiter
@@ -54,6 +57,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "not_active", "Запись уже неактивна")
 	case errors.Is(err, service.ErrExternalVenue):
 		writeError(w, http.StatusBadRequest, "external_venue", "В этом зале запись через сервис недоступна")
+	case errors.Is(err, service.ErrBookingClosed):
+		writeError(w, http.StatusConflict, "booking_closed", "Запись на это занятие закрыта студией")
 	case errors.Is(err, service.ErrInvalidRequest):
 		writeError(w, http.StatusBadRequest, "invalid_request", "Некорректный запрос")
 	default:

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -52,7 +53,9 @@ func main() {
 		if err != nil {
 			log.Fatalf("demo partners: %v", err)
 		}
-		log.Printf("demo partners: %d studios, %d upcoming lessons checked", len(seed.DemoVenues), n)
+		log.Printf("demo partners: %d studios, %d new lessons", len(seed.DemoVenues), n)
+	} else if _, err := seed.ExpandSchedules(ctx, store, time.Now(), ""); err != nil {
+		log.Fatalf("schedules: %v", err)
 	}
 
 	client := maxclient.NewClient(cfg.MaxBotAPIBaseURL, cfg.MaxBotAPIToken)
@@ -77,6 +80,14 @@ func main() {
 	geocoder := geocode.New(cfg.DGISCatalogURL, cfg.DGISAPIKey)
 	chatBot.SetGeocoder(geocoder)
 
+	studio := service.NewStudioService(store, partner, cfg.PlatformAdminIDs)
+	studio.SetPresenter(presenter)
+	studio.SetGeocoder(geocoder)
+	studio.SetInviteURL(inviteURL(ctx, client, cfg))
+	bookings.SetStudioNotifier(studio)
+	chatBot.SetStudio(studio)
+	log.Printf("platform admins: %d", len(cfg.PlatformAdminIDs))
+
 	testUsers := map[string]bool{}
 	for _, id := range cfg.TestMaxUserIDs {
 		testUsers[id] = true
@@ -85,6 +96,7 @@ func main() {
 		Search:   search,
 		Bookings: bookings,
 		Partner:  partner,
+		Studio:   studio,
 		Geocoder: geocoder,
 		Bot:      chatBot,
 		Auth: handler.UserAuth{
@@ -162,4 +174,17 @@ func initMaxBot(ctx context.Context, client *maxclient.Client, cfg *config.Confi
 		return
 	}
 	log.Printf("MAX webhook subscribed: %s", cfg.MaxWebhookURL)
+}
+
+// inviteURL — ссылка-приглашение администратора студии. Внутри MAX она
+// открывает мини-приложение бота с параметром studio_<токен>.
+func inviteURL(ctx context.Context, client *maxclient.Client, cfg *config.Config) func(string) string {
+	return func(token string) string {
+		reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if info, err := client.Bot(reqCtx); err == nil && info.Username != "" {
+			return "https://max.ru/" + info.Username + "?startapp=studio_" + token
+		}
+		return strings.TrimRight(cfg.MiniAppURL, "/") + "/?start=studio_" + token
+	}
 }

@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"sportslot/internal/bot"
@@ -17,6 +18,49 @@ import (
 type BotWebhook struct {
 	bot    *bot.Bot
 	secret string
+
+	// События одного пользователя обрабатываются по очереди, в порядке
+	// поступления: при быстрых нажатиях кнопок сценарий не путается.
+	mu     sync.Mutex
+	queues map[string]chan bot.Incoming
+}
+
+const userQueueSize = 32
+
+func (h *BotWebhook) dispatch(in bot.Incoming) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.queues == nil {
+		h.queues = map[string]chan bot.Incoming{}
+	}
+	q, running := h.queues[in.MaxUserID]
+	if !running {
+		q = make(chan bot.Incoming, userQueueSize)
+		h.queues[in.MaxUserID] = q
+		go h.drain(in.MaxUserID, q)
+	}
+	select {
+	case q <- in:
+	default:
+		log.Printf("webhook: queue of %s is full, event dropped", in.MaxUserID)
+	}
+}
+
+func (h *BotWebhook) drain(userID string, q chan bot.Incoming) {
+	for {
+		h.mu.Lock()
+		select {
+		case in := <-q:
+			h.mu.Unlock()
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			h.bot.Handle(ctx, in)
+			cancel()
+		default:
+			delete(h.queues, userID)
+			h.mu.Unlock()
+			return
+		}
+	}
 }
 
 type maxUser struct {
@@ -124,10 +168,6 @@ func (h *BotWebhook) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 	// MAX ждёт быстрый ответ, а сценарий может отправить несколько сообщений —
 	// обрабатываем событие в фоне со своим таймаутом.
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		h.bot.Handle(ctx, in)
-	}()
+	h.dispatch(in)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

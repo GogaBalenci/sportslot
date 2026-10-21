@@ -34,19 +34,21 @@ type Incoming struct {
 
 // state — где пользователь находится в сценарии. Хранится в dialog_states.
 type state struct {
-	Step      string            `json:"step"`
-	Sport     string            `json:"sport,omitempty"`
-	When      string            `json:"when,omitempty"`
-	District  string            `json:"district,omitempty"`
-	Lat       float64           `json:"lat,omitempty"`
-	Lon       float64           `json:"lon,omitempty"`
-	HasPoint  bool              `json:"has_point,omitempty"`
-	Address   string            `json:"address,omitempty"`
-	Mode      string            `json:"mode,omitempty"`
-	Limit     int               `json:"limit,omitempty"`
-	Offset    int               `json:"offset,omitempty"`
-	QuizIndex int               `json:"quiz_index,omitempty"`
-	Answers   map[string]string `json:"answers,omitempty"`
+	Step      string  `json:"step"`
+	Sport     string  `json:"sport,omitempty"`
+	When      string  `json:"when,omitempty"`
+	District  string  `json:"district,omitempty"`
+	Lat       float64 `json:"lat,omitempty"`
+	Lon       float64 `json:"lon,omitempty"`
+	HasPoint  bool    `json:"has_point,omitempty"`
+	Address   string  `json:"address,omitempty"`
+	Mode      string  `json:"mode,omitempty"`
+	Limit     int     `json:"limit,omitempty"`
+	Offset    int     `json:"offset,omitempty"`
+	QuizIndex int     `json:"quiz_index,omitempty"`
+	// MsgVenue — студия, которой пользователь пишет сообщение.
+	MsgVenue string            `json:"msg_venue,omitempty"`
+	Answers  map[string]string `json:"answers,omitempty"`
 }
 
 const (
@@ -55,6 +57,7 @@ const (
 	stepWhen    = "when"
 	stepWhere   = "where"
 	stepTravel  = "travel"
+	stepMessage = "message"
 	stepResults = "results"
 	pageSize    = 3
 )
@@ -66,8 +69,12 @@ type Bot struct {
 	bookings  *service.BookingService
 	presenter *Presenter
 	geocoder  *geocode.Geocoder
+	studio    *service.StudioService
 	now       func() time.Time
 }
+
+// SetStudio включает переписку клиентов со студиями.
+func (b *Bot) SetStudio(s *service.StudioService) { b.studio = s }
 
 // SetGeocoder включает поиск по адресу, который пользователь пишет текстом.
 func (b *Bot) SetGeocoder(g *geocode.Geocoder) { b.geocoder = g }
@@ -135,6 +142,10 @@ func (b *Bot) Handle(ctx context.Context, in Incoming) {
 
 func (b *Bot) callback(ctx context.Context, in Incoming, st state) {
 	cmd, arg, _ := strings.Cut(in.Payload, ":")
+	if st.Step == stepMessage && cmd != "msg" {
+		st.Step, st.MsgVenue = stepMenu, ""
+		b.save(ctx, in.MaxUserID, st)
+	}
 	switch cmd {
 	case "menu":
 		b.menu(ctx, in, false)
@@ -194,8 +205,13 @@ func (b *Bot) callback(ctx context.Context, in Incoming, st state) {
 	case "cxy", "no":
 		b.cancel(ctx, in, arg, cmd == "no")
 	case "go":
-		b.reply(ctx, in, "Отлично, ждём тебя! За два часа пришлю адрес и код входа.", nil)
-		b.bookings.LogEvent(ctx, in.MaxUserID, "reminder_confirmed", map[string]interface{}{"booking_id": arg})
+		if err := b.bookings.MarkGoing(ctx, arg, in.MaxUserID); err != nil {
+			b.reply(ctx, in, "Эта запись уже неактивна.", mc.Keyboard{{mc.Callback("Мои записи", "my")}})
+			return
+		}
+		b.reply(ctx, in, "👍 <b>Отлично, ждём тебя!</b>\nЗа два часа пришлю адрес и код входа. Студия видит, что ты придёшь.", nil)
+	case "msg":
+		b.askMessage(ctx, in, st, arg)
 	case "rs":
 		b.rescheduleOptions(ctx, in, arg)
 	case "rst":
@@ -220,6 +236,13 @@ func (b *Bot) text(ctx context.Context, in Incoming, st state) {
 		return
 	case "/help", "помощь":
 		b.help(ctx, in)
+		return
+	case "/id":
+		b.reply(ctx, in, "Твой ID в MAX: <code>"+esc(in.MaxUserID)+"</code>\n<i>Он нужен, чтобы назначить владельца платформы (PLATFORM_ADMIN_IDS).</i>", nil)
+		return
+	}
+	if st.Step == stepMessage && st.MsgVenue != "" {
+		b.sendMessage(ctx, in, st)
 		return
 	}
 
@@ -342,7 +365,9 @@ func (b *Bot) askWhen(ctx context.Context, in Incoming, text string) {
 }
 
 func whereKeyboard() mc.Keyboard {
-	kb := mc.Keyboard{{mc.RequestGeo("Отправить геолокацию")}}
+	// Кнопка геолокации в чате работает в мобильном MAX; на компьютере и в
+	// веб-версии точку определяет мини-приложение.
+	kb := mc.Keyboard{{mc.RequestGeo("Отправить геолокацию")}, {mc.OpenApp("Определить через приложение", "geo")}}
 	for i := 0; i < len(catalog.Districts); i += 2 {
 		row := []mc.Button{mc.Callback(catalog.Districts[i].Title, "d:"+catalog.Districts[i].ID)}
 		if i+1 < len(catalog.Districts) {
@@ -355,7 +380,7 @@ func whereKeyboard() mc.Keyboard {
 
 func (b *Bot) askWhere(ctx context.Context, in Incoming) {
 	b.reply(ctx, in, "📍 <b>Откуда будешь добираться?</b>\n\nОтправь геолокацию — посчитаю время в пути до каждого зала. Или выбери район.\n\n"+
-		"<i>На компьютере кнопка геолокации может не работать — просто напиши адрес, например «Большая Садовая, 1».</i>", whereKeyboard())
+		"<i>На компьютере нажми «Определить через приложение» или просто напиши адрес, например «Большая Садовая, 1».</i>", whereKeyboard())
 }
 
 func (b *Bot) searchQuery(st state) service.VenueSearch {
@@ -857,4 +882,52 @@ func (b *Bot) addressSearch(ctx context.Context, in Incoming, st state, text str
 	b.bookings.LogEvent(ctx, in.MaxUserID, "address", nil)
 	b.reply(ctx, in, "📍 Считаю от адреса: <b>"+esc(place.Address)+"</b>", nil)
 	b.askTravel(ctx, in)
+}
+
+// LocationFromApp — геолокация пришла из мини-приложения. Если пользователь
+// был на шаге выбора места, сценарий в чате продолжается с вопроса о дороге.
+func (b *Bot) LocationFromApp(ctx context.Context, maxUserID, name string, lat, lon float64) (string, string) {
+	st := b.load(ctx, maxUserID)
+	st.HasPoint, st.Lat, st.Lon, st.District, st.Address = true, lat, lon, "", ""
+	in := Incoming{MaxUserID: maxUserID, Name: name}
+	if st.Sport != "" && (st.Step == stepWhere || st.Step == stepTravel || st.Step == stepResults) {
+		st.Step, st.Mode, st.Limit = stepTravel, "", 0
+		b.save(ctx, maxUserID, st)
+		b.reply(ctx, in, "📍 <b>Геолокацию получил из приложения</b>", nil)
+		b.askTravel(ctx, in)
+		return st.Sport, st.When
+	}
+	b.save(ctx, maxUserID, st)
+	return st.Sport, st.When
+}
+
+func (b *Bot) askMessage(ctx context.Context, in Incoming, st state, venueID string) {
+	if b.studio == nil {
+		return
+	}
+	v, err := b.store.GetVenue(ctx, venueID)
+	if err != nil {
+		b.reply(ctx, in, "Не нашёл эту студию.", mc.Keyboard{{mc.Callback("В начало", "menu")}})
+		return
+	}
+	st.Step, st.MsgVenue = stepMessage, venueID
+	b.save(ctx, in.MaxUserID, st)
+	b.reply(ctx, in, "✍️ <b>Сообщение студии «"+esc(v.Name)+"»</b>\n\nНапиши вопрос одним сообщением — администратор ответит, ответ придёт сюда.",
+		mc.Keyboard{{mc.Callback("Отмена", "my")}})
+}
+
+func (b *Bot) sendMessage(ctx context.Context, in Incoming, st state) {
+	venueID := st.MsgVenue
+	st.Step, st.MsgVenue = stepMenu, ""
+	b.save(ctx, in.MaxUserID, st)
+	if strings.TrimSpace(in.Text) == "" {
+		b.reply(ctx, in, "Пустое сообщение не отправить. Напиши текст.", mc.Keyboard{{mc.Callback("Написать ещё раз", "msg:"+venueID)}})
+		return
+	}
+	if _, err := b.studio.SendClientMessage(ctx, in.MaxUserID, in.Name, venueID, in.Text); err != nil {
+		log.Printf("bot: client message: %v", err)
+		b.reply(ctx, in, "Не получилось отправить сообщение. Попробуй ещё раз.", mc.Keyboard{{mc.Callback("Написать ещё раз", "msg:"+venueID)}})
+		return
+	}
+	b.reply(ctx, in, "📨 <b>Отправил студии</b>\nОтвет придёт сюда, в чат.", mc.Keyboard{{mc.Callback("Мои записи", "my")}})
 }

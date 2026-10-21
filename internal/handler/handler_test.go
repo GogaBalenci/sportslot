@@ -44,6 +44,7 @@ func newFakeMax(t *testing.T) *fakeMax {
 		case "/me":
 			_, _ = w.Write([]byte(`{"user_id":1,"username":"sportslot_bot","name":"СпортСлот"}`))
 		case "/messages":
+			t.Logf("bot → MAX: %.300s", body)
 			f.messages <- string(body)
 			_, _ = w.Write([]byte(`{"message":{}}`))
 		default:
@@ -88,8 +89,13 @@ func newServer(t *testing.T) (*httptest.Server, *fakeMax) {
 	partner.SetPresenter(presenter)
 	chatBot := bot.New(client, store, search, bookings, presenter)
 	chatBot.SetGeocoder(geocoder)
+	studio := service.NewStudioService(store, partner, []string{"999"})
+	studio.SetPresenter(presenter)
+	studio.SetGeocoder(geocoder)
+	bookings.SetStudioNotifier(studio)
+	chatBot.SetStudio(studio)
 	router := handler.NewRouter(handler.Dependencies{
-		Search: search, Bookings: bookings, Partner: partner, Geocoder: geocoder,
+		Search: search, Bookings: bookings, Partner: partner, Geocoder: geocoder, Studio: studio,
 		Bot:         chatBot,
 		Auth:        handler.UserAuth{BotToken: botToken, MaxAge: time.Hour, TestUsers: map[string]bool{seed.TestMaxUserID: true}},
 		CORSOrigins: []string{"*"}, WebhookSecret: "hook-secret",
@@ -306,6 +312,15 @@ func TestPartnerCheckIn(t *testing.T) {
 	if status, _ := call(t, http.MethodPost, srv.URL+"/api/v1/partner/checkin", partner, map[string]string{"code": code}); status != http.StatusConflict {
 		t.Fatalf("second check-in: want 409, got %d", status)
 	}
+
+	status, me := call(t, http.MethodGet, srv.URL+"/api/v1/studio/me", partner, nil)
+	if status != http.StatusOK || me["demo"] != true || len(me["studios"].([]interface{})) == 0 {
+		t.Fatalf("studio me: %d %v", status, me)
+	}
+	status, training := call(t, http.MethodPost, srv.URL+"/api/v1/studio/checkin", partner, map[string]string{"code": "SPORTSLOT:000000"})
+	if status != http.StatusOK || training["training"] != true {
+		t.Fatalf("training check-in: %d %v", status, training)
+	}
 }
 
 // fake2GIS отвечает на матрицу расстояний (до любого зала 5 минут) и на
@@ -392,5 +407,110 @@ func TestGeocodeEndpoint(t *testing.T) {
 	}
 	if status, _ := call(t, http.MethodGet, srv.URL+"/api/v1/geocode?q=a", nil, nil); status != http.StatusBadRequest {
 		t.Fatalf("short query: want 400, got %d", status)
+	}
+}
+
+func tma(userID int64) map[string]string {
+	return map[string]string{"Authorization": "tma " + initData(userID)}
+}
+
+func TestStudioCabinetAPI(t *testing.T) {
+	srv, max := newServer(t)
+	owner, admin := tma(999), tma(555)
+
+	if status, body := call(t, http.MethodGet, srv.URL+"/api/v1/studio/me", admin, nil); status != http.StatusOK || len(body["studios"].([]interface{})) != 0 {
+		t.Fatalf("not an admin yet: %d %v", status, body)
+	}
+	if status, _ := call(t, http.MethodGet, srv.URL+"/api/v1/platform/studios", admin, nil); status != http.StatusForbidden {
+		t.Fatalf("platform for a stranger: want 403, got %d", status)
+	}
+
+	_, found := call(t, http.MethodGet, srv.URL+"/api/v1/platform/catalog?q="+url.QueryEscape("фитнес"), owner, nil)
+	venueID := found["venues"].([]interface{})[0].(map[string]interface{})["id"].(string)
+	if status, v := call(t, http.MethodPost, srv.URL+"/api/v1/platform/studios", owner, map[string]string{"venue_id": venueID}); status != http.StatusCreated || v["booking_mode"] != "instant" {
+		t.Fatalf("connect studio: %d %v", status, v)
+	}
+	status, inv := call(t, http.MethodPost, srv.URL+"/api/v1/platform/studios/"+venueID+"/invites", owner, nil)
+	if status != http.StatusCreated || !strings.Contains(inv["link"].(string), "studio_") {
+		t.Fatalf("invite: %d %v", status, inv)
+	}
+	if status, _ := call(t, http.MethodPost, srv.URL+"/api/v1/studio/invites/accept", admin, map[string]string{"token": inv["token"].(string)}); status != http.StatusOK {
+		t.Fatalf("accept invite: %d", status)
+	}
+	if _, me := call(t, http.MethodGet, srv.URL+"/api/v1/studio/me", admin, nil); len(me["studios"].([]interface{})) != 1 || me["platform"] != false {
+		t.Fatalf("studio/me after invite: %v", me)
+	}
+
+	tomorrow := time.Now().Add(24 * time.Hour)
+	tpl := map[string]interface{}{"weekday": int(tomorrow.Weekday()), "start_minute": 19 * 60, "duration_min": 60,
+		"title": "Круговая тренировка", "sport_type": "fitness", "quota": 8}
+	if status, body := call(t, http.MethodPost, srv.URL+"/api/v1/studio/"+venueID+"/templates", admin, tpl); status != http.StatusOK {
+		t.Fatalf("template: %d %v", status, body)
+	}
+	_, slots := call(t, http.MethodGet, srv.URL+"/api/v1/studio/"+venueID+"/slots", admin, nil)
+	slotID := slots["slots"].([]interface{})[0].(map[string]interface{})["id"].(string)
+
+	_, booking := call(t, http.MethodPost, srv.URL+"/api/v1/bookings", tma(888), map[string]string{"slot_id": slotID})
+	note := max.next(t, "Новая запись")
+	if !strings.Contains(note, "max://user/888") || !strings.Contains(note, "sb_"+booking["id"].(string)) {
+		t.Fatalf("admin notification must link the client and the booking: %s", note)
+	}
+	status, card := call(t, http.MethodGet, srv.URL+"/api/v1/studio/bookings/"+booking["id"].(string), admin, nil)
+	if status != http.StatusOK || card["max_user_id"] != "888" {
+		t.Fatalf("client card: %d %v", status, card)
+	}
+	if status, _ := call(t, http.MethodGet, srv.URL+"/api/v1/studio/"+seed.FlagshipVenueID+"/bookings", admin, nil); status != http.StatusForbidden {
+		t.Fatalf("other studio: want 403, got %d", status)
+	}
+
+	if status, _ := call(t, http.MethodPost, srv.URL+"/api/v1/messages", tma(888), map[string]string{"venue_id": venueID, "text": "Есть душ?"}); status != http.StatusCreated {
+		t.Fatalf("client message: %d", status)
+	}
+	max.next(t, "Есть душ?")
+	_, threads := call(t, http.MethodGet, srv.URL+"/api/v1/studio/"+venueID+"/threads", admin, nil)
+	userID := threads["threads"].([]interface{})[0].(map[string]interface{})["user_id"].(string)
+	if status, _ := call(t, http.MethodPost, srv.URL+"/api/v1/studio/"+venueID+"/threads/"+userID, admin, map[string]string{"text": "Да, есть"}); status != http.StatusCreated {
+		t.Fatalf("reply: %d", status)
+	}
+	max.next(t, "Да, есть")
+
+	if status, _ := call(t, http.MethodPost, srv.URL+"/api/v1/studio/"+venueID+"/slots/"+slotID+"/cancel", admin, nil); status != http.StatusOK {
+		t.Fatalf("cancel slot: %d", status)
+	}
+	max.next(t, "Занятие отменено студией")
+
+	if status, body := call(t, http.MethodPost, srv.URL+"/api/v1/studio/checkin", admin, map[string]string{"code": "SPORTSLOT:000000"}); status != http.StatusOK || body["training"] != true {
+		t.Fatalf("training check-in: %d %v", status, body)
+	}
+	if status, stats := call(t, http.MethodGet, srv.URL+"/api/v1/studio/"+venueID+"/stats", admin, nil); status != http.StatusOK || stats["clients"] == nil {
+		t.Fatalf("stats: %d %v", status, stats)
+	}
+
+	// Общий демо-код открывает только демо-студии.
+	_, login := call(t, http.MethodPost, srv.URL+"/api/v1/partner/login", nil, map[string]string{"code": "partner-code"})
+	demo := map[string]string{"Authorization": "Partner " + login["token"].(string)}
+	if _, me := call(t, http.MethodGet, srv.URL+"/api/v1/studio/me", demo, nil); me["demo"] != true || len(me["studios"].([]interface{})) != 8 {
+		t.Fatalf("demo access: %v", me)
+	}
+	if status, _ := call(t, http.MethodGet, srv.URL+"/api/v1/studio/"+venueID+"/bookings", demo, nil); status != http.StatusForbidden {
+		t.Fatalf("demo code must not open real studios: %d", status)
+	}
+}
+
+func TestLocationFromMiniAppContinuesChat(t *testing.T) {
+	srv, max := newServer(t)
+	webhook(t, srv, callback("sp:boxing"))
+	max.next(t, "Когда удобно")
+	webhook(t, srv, callback("w:any"))
+	max.next(t, "Определить через приложение")
+
+	status, body := call(t, http.MethodPost, srv.URL+"/api/v1/me/location", tma(777), map[string]float64{"lat": 47.2336, "lon": 39.6179})
+	if status != http.StatusOK || body["sport"] != "boxing" || body["when"] != "any" {
+		t.Fatalf("location from app: %d %v", status, body)
+	}
+	max.next(t, "Геолокацию получил из приложения")
+	max.next(t, "Как будешь добираться")
+	if status, _ := call(t, http.MethodPost, srv.URL+"/api/v1/me/location", tma(777), map[string]float64{"lat": 55.75, "lon": 37.61}); status != http.StatusBadRequest {
+		t.Fatalf("point outside Rostov: want 400, got %d", status)
 	}
 }

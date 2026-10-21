@@ -39,7 +39,7 @@ func bookingKeyboard(v *model.BookingView, from *Origin) mc.Keyboard {
 	return mc.Keyboard{
 		{mc.OpenApp("QR-пропуск", "ticket_"+v.ID)},
 		{mc.Callback("Перенести", "rs:"+v.ID), mc.Callback("Отменить", "cx:"+v.ID)},
-		{mc.Link("Как добраться", routeURL(from, v.Venue.Lat, v.Venue.Lon))},
+		{mc.Link("Как добраться", routeURL(from, v.Venue.Lat, v.Venue.Lon)), mc.Callback("Написать студии", "msg:"+v.Venue.ID)},
 	}
 }
 
@@ -114,4 +114,64 @@ func (p *Presenter) Promoted(ctx context.Context, v *model.BookingView) error {
 	text := fmt.Sprintf("🎉 <b>Освободилось место — ты записан из листа ожидания</b>\n\n%s\n\n🎟 Код входа: <b>%s</b>\n<i>Если не получается прийти — отмени запись, место уйдёт следующему.</i>",
 		slotLine(v), codeLabel(v.CheckinCode))
 	return p.client.SendMessage(ctx, v.MaxUserID, text, bookingKeyboard(v, nil))
+}
+
+// userLink — имя клиента ссылкой на его профиль MAX (только для числовых id).
+func userLink(maxUserID, name string) string {
+	if name = strings.TrimSpace(name); name == "" {
+		name = "Клиент"
+	}
+	for _, r := range maxUserID {
+		if r < '0' || r > '9' {
+			return "<b>" + esc(name) + "</b>"
+		}
+	}
+	return `<a href="max://user/` + maxUserID + `">` + esc(name) + "</a>"
+}
+
+var studioEventTitle = map[string]string{
+	"booked":      "🆕 <b>Новая запись</b>",
+	"cancelled":   "❌ <b>Клиент отменил запись</b>",
+	"rescheduled": "🔁 <b>Клиент перенёс запись</b>",
+	"going":       "👍 <b>Клиент подтвердил, что придёт</b>",
+	"promoted":    "🎉 <b>Запись из листа ожидания</b>",
+}
+
+// StudioEvent — уведомление администратору студии о событии с записью.
+func (p *Presenter) StudioEvent(ctx context.Context, adminMaxID, kind string, v *model.BookingView) error {
+	title := studioEventTitle[kind]
+	if title == "" {
+		title = "<b>Изменение записи</b>"
+	}
+	text := fmt.Sprintf("%s\n\n👤 %s\n<b>%s</b>\n🗓 %s · %s\n🏟 %s\n<i>Занято мест: %d из %d</i>",
+		title, userLink(v.MaxUserID, v.UserName), esc(v.Slot.Title), fullDate(v.Slot.StartAt), clock(v.Slot.StartAt),
+		esc(v.Venue.Name), v.Slot.QuotaBooked, v.Slot.QuotaTotal)
+	return p.client.SendMessage(ctx, adminMaxID, text, mc.Keyboard{{mc.OpenApp("Открыть в кабинете", "sb_"+v.ID)}})
+}
+
+// StudioMessage — администратору: клиент написал студии.
+func (p *Presenter) StudioMessage(ctx context.Context, adminMaxID string, venue *model.Venue, client *model.User, text string, messageID int64) error {
+	body := fmt.Sprintf("💬 <b>Новое сообщение</b> от %s\n🏟 %s\n\n<blockquote>%s</blockquote>",
+		userLink(client.MaxUserID, client.Name), esc(venue.Name), esc(text))
+	return p.client.SendMessage(ctx, adminMaxID, body, mc.Keyboard{{mc.OpenApp("Ответить в кабинете", fmt.Sprintf("sm_%d", messageID))}})
+}
+
+// StudioReply — клиенту: ответ студии.
+func (p *Presenter) StudioReply(ctx context.Context, clientMaxID string, venue *model.Venue, text string) error {
+	body := fmt.Sprintf("💬 <b>Ответ студии «%s»</b>\n\n<blockquote>%s</blockquote>", esc(venue.Name), esc(text))
+	return p.client.SendMessage(ctx, clientMaxID, body, mc.Keyboard{{mc.Callback("Ответить", "msg:"+venue.ID)}})
+}
+
+// SlotCancelled — клиенту: студия отменила занятие.
+func (p *Presenter) SlotCancelled(ctx context.Context, v *model.BookingView) error {
+	contacts := "напиши студии здесь, в чате"
+	if v.Venue.Phone != "" {
+		contacts = "звони по телефону " + esc(phoneLabel(v.Venue.Phone)) + " или напиши студии здесь, в чате"
+	}
+	text := fmt.Sprintf("⚠️ <b>Занятие отменено студией</b>\n\n%s\n\nЗапись отменена администратором студии. Если есть вопросы — %s.",
+		slotLine(v), contacts)
+	return p.client.SendMessage(ctx, v.MaxUserID, text, mc.Keyboard{
+		{mc.Callback("Выбрать другое время", "vs:"+v.Venue.ID)},
+		{mc.Callback("Написать студии", "msg:"+v.Venue.ID)},
+	})
 }
