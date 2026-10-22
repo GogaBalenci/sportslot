@@ -12,6 +12,7 @@ services:
       APP_ENV: prod
       MAX_WEBHOOK_URL: https://${DOMAIN:?set DOMAIN in .env}/bot/webhook
       MINI_APP_URL: https://${DOMAIN}/
+      PUBLIC_URL: https://${DOMAIN}
       CORS_ORIGINS: https://${DOMAIN}
     restart: unless-stopped
 
@@ -42,6 +43,28 @@ services:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    restart: unless-stopped
+
+  # Мониторинг и бэкапы: алерты администраторам платформы в MAX, pg_dump раз в сутки в ./backups.
+  ops:
+    build:
+      context: .
+      dockerfile: deploy/ops.Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      TZ: Europe/Moscow
+      DATABASE_URL: postgresql://sportslot:${POSTGRES_PASSWORD:-sportslot_dev_pass}@db:5432/sportslot?sslmode=disable
+      MAX_BOT_API_BASE_URL: ${MAX_BOT_API_BASE_URL:-https://platform-api2.max.ru}
+      MAX_BOT_API_TOKEN: ${MAX_BOT_API_TOKEN:-}
+      PLATFORM_ADMIN_IDS: ${PLATFORM_ADMIN_IDS:-}
+      # Внутренний адрес API и сайт снаружи — так видно и падение API, и проблемы с Caddy/сертификатом.
+      OPS_CHECK_URLS: http://api:8080/api/v1/health,https://${DOMAIN}/api/v1/health
+      BACKUP_HOUR: ${BACKUP_HOUR:-4}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    volumes:
+      - ./backups:/backups
     restart: unless-stopped
 
 volumes:

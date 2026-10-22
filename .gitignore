@@ -1,4 +1,5 @@
 .env
+/backups/
 .pnpm-store/
 node_modules/
 web/mini-app/node_modules/
