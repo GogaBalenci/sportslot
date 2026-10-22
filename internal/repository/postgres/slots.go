@@ -54,6 +54,9 @@ type SlotQuery struct {
 	OnlyAvailable bool
 	// IncludeHidden — показывать закрытые для записи и отменённые занятия (кабинет студии).
 	IncludeHidden bool
+	// TemplateID — только занятия одного шаблона (запись на несколько недель).
+	TemplateID string
+	Limit      int
 }
 
 func (s *Store) ListSlots(ctx context.Context, q SlotQuery) ([]model.Slot, error) {
@@ -63,7 +66,10 @@ func (s *Store) ListSlots(ctx context.Context, q SlotQuery) ([]model.Slot, error
 		  AND s.start_at >= $3 AND s.start_at < $4
 		  AND (NOT $5 OR s.quota_booked < s.quota_total)
 		  AND ($6 OR (NOT s.booking_closed AND s.cancelled_at IS NULL))
-		ORDER BY s.start_at, s.title`, q.VenueIDs, q.Sport, q.From, q.To, q.OnlyAvailable, q.IncludeHidden)
+		  AND ($7 = '' OR s.template_id::text = $7)
+		ORDER BY s.start_at, s.title
+		LIMIT CASE WHEN $8 > 0 THEN $8 END`, q.VenueIDs, q.Sport, q.From, q.To, q.OnlyAvailable, q.IncludeHidden,
+		q.TemplateID, q.Limit)
 	if err != nil {
 		return nil, wrap("list slots", err)
 	}

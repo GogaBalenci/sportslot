@@ -12,3 +12,6 @@ var (
 var ErrAlreadyBooked = errors.New("user already booked this slot")
 
 var ErrBookingClosed = errors.New("booking for this slot is closed")
+
+// ErrOwnInvite — пользователь открыл собственную ссылку для друга.
+var ErrOwnInvite = errors.New("own invite link")

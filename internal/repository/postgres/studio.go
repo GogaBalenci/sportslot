@@ -204,6 +204,11 @@ func (s *Store) CancelSlot(ctx context.Context, slotID string) ([]string, error)
 		ids = append(ids, id)
 	}
 	rows.Close()
+	for _, id := range ids {
+		if err := refundPassVisit(ctx, tx, id); err != nil {
+			return nil, err
+		}
+	}
 	if _, err := tx.Exec(ctx, `UPDATE slots SET cancelled_at = now(), booking_closed = true,
 		quota_booked = GREATEST(quota_booked - $2, 0) WHERE id = $1`, slotID, len(ids)); err != nil {
 		return nil, wrap("cancel slot", err)

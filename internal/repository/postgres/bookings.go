@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -14,19 +15,32 @@ import (
 )
 
 const bookingColumns = `b.id, b.user_id, b.slot_id, b.status, b.source_channel, COALESCE(b.checkin_code, ''),
-	b.reminder_24h_sent OR b.reminder_2h_sent, b.rating, b.created_at, b.cancelled_at, b.attended_at, b.cancel_reason`
+	b.reminder_24h_sent OR b.reminder_2h_sent, b.rating, b.created_at, b.cancelled_at, b.attended_at, b.cancel_reason,
+	COALESCE(b.review, ''), b.reviewed_at, COALESCE(b.guest_token, ''), COALESCE(b.host_booking_id::text, ''),
+	COALESCE(b.user_pass_id::text, ''), b.paid_at`
 
-func scanBooking(row pgx.Row) (*model.Booking, error) {
-	var b model.Booking
-	var rating *int16
-	if err := row.Scan(&b.ID, &b.UserID, &b.SlotID, &b.Status, &b.SourceChannel, &b.CheckinCode,
-		&b.ReminderSent, &rating, &b.CreatedAt, &b.CancelledAt, &b.AttendedAt, &b.CancelReason); err != nil {
-		return nil, err
-	}
+// bookingDest — поля записи в порядке bookingColumns.
+func bookingDest(b *model.Booking, rating **int16) []interface{} {
+	return []interface{}{&b.ID, &b.UserID, &b.SlotID, &b.Status, &b.SourceChannel, &b.CheckinCode,
+		&b.ReminderSent, rating, &b.CreatedAt, &b.CancelledAt, &b.AttendedAt, &b.CancelReason,
+		&b.Review, &b.ReviewedAt, &b.GuestToken, &b.HostBookingID, &b.UserPassID, &b.PaidAt}
+}
+
+func finishBooking(b *model.Booking, rating *int16) {
 	if rating != nil {
 		r := int(*rating)
 		b.Rating = &r
 	}
+	b.IsGuest = b.GuestToken != ""
+}
+
+func scanBooking(row pgx.Row) (*model.Booking, error) {
+	var b model.Booking
+	var rating *int16
+	if err := row.Scan(bookingDest(&b, &rating)...); err != nil {
+		return nil, err
+	}
+	finishBooking(&b, rating)
 	return &b, nil
 }
 
@@ -45,21 +59,16 @@ func scanView(row pgx.Row) (*model.BookingView, error) {
 	var rating *int16
 	v := &bv.Venue
 	sl := &bv.Slot
-	err := row.Scan(&bv.ID, &bv.UserID, &bv.SlotID, &bv.Status, &bv.SourceChannel, &bv.CheckinCode,
-		&bv.ReminderSent, &rating, &bv.CreatedAt, &bv.CancelledAt, &bv.AttendedAt, &bv.CancelReason,
-		&bv.MaxUserID, &bv.UserName,
+	dest := append(bookingDest(&bv.Booking, &rating), &bv.MaxUserID, &bv.UserName,
 		&sl.ID, &sl.VenueID, &sl.Title, &sl.SportType, &sl.Level, &sl.StartAt, &sl.EndAt, &sl.QuotaTotal, &sl.QuotaBooked,
 		&sl.TemplateID, &sl.Closed, &sl.Cancelled,
 		&v.ID, &v.ExternalID, &v.Name, &v.SportType, &v.Sports, &v.Level, &v.Address, &v.District,
 		&v.Lat, &v.Lon, &v.Source, &v.SourceURL, &v.BookingMode, &v.Phone, &v.Website, &v.OpeningHours,
 		&v.Description, &v.WhatToBring, &v.TrialPrice, &v.VerifiedAt, &v.CreatedAt)
-	if err != nil {
+	if err := row.Scan(dest...); err != nil {
 		return nil, err
 	}
-	if rating != nil {
-		r := int(*rating)
-		bv.Rating = &r
-	}
+	finishBooking(&bv.Booking, rating)
 	return &bv, nil
 }
 
@@ -135,7 +144,7 @@ func (s *Store) CreateBooking(ctx context.Context, userID, slotID string, channe
 		return nil, false, wrap("find existing booking", err)
 	}
 
-	b, err := bookInTx(ctx, tx, userID, slotID, channel)
+	b, err := bookInTx(ctx, tx, bookOpts{userID: userID, slotID: slotID, channel: channel, usePass: true})
 	if err != nil {
 		return nil, false, err
 	}
@@ -145,12 +154,23 @@ func (s *Store) CreateBooking(ctx context.Context, userID, slotID string, channe
 	return b, true, nil
 }
 
-func bookInTx(ctx context.Context, tx pgx.Tx, userID, slotID string, channel model.SourceChannel) (*model.Booking, error) {
+// bookOpts — как создаётся запись: обычная, с визитом из абонемента или место для друга.
+type bookOpts struct {
+	userID, slotID string
+	channel        model.SourceChannel
+	usePass        bool   // списать визит из активного абонемента студии, если он есть
+	guestToken     string // место для друга, которое он примет по ссылке
+	hostBookingID  string
+}
+
+func bookInTx(ctx context.Context, tx pgx.Tx, o bookOpts) (*model.Booking, error) {
+	userID, slotID, channel := o.userID, o.slotID, o.channel
 	var startAt time.Time
 	var total, booked int
 	var closed bool
-	err := tx.QueryRow(ctx, `SELECT start_at, quota_total, quota_booked, booking_closed OR cancelled_at IS NOT NULL
-		FROM slots WHERE id = $1 FOR UPDATE`, slotID).Scan(&startAt, &total, &booked, &closed)
+	var venueID string
+	err := tx.QueryRow(ctx, `SELECT start_at, quota_total, quota_booked, booking_closed OR cancelled_at IS NOT NULL, venue_id
+		FROM slots WHERE id = $1 FOR UPDATE`, slotID).Scan(&startAt, &total, &booked, &closed, &venueID)
 	if err != nil {
 		return nil, wrap("lock slot", notFound(err))
 	}
@@ -176,11 +196,15 @@ func bookInTx(ctx context.Context, tx pgx.Tx, userID, slotID string, channel mod
 			return nil, wrap("savepoint", err)
 		}
 		b, err := scanBooking(tx.QueryRow(ctx, `
-			INSERT INTO bookings (user_id, slot_id, status, source_channel, checkin_code)
-			VALUES ($1, $2, 'confirmed', $3, $4)
-			RETURNING id, user_id, slot_id, status, source_channel, checkin_code, false, rating,
-				created_at, cancelled_at, attended_at, cancel_reason`, userID, slotID, string(channel), code))
+			INSERT INTO bookings (user_id, slot_id, status, source_channel, checkin_code, guest_token, host_booking_id)
+			VALUES ($1, $2, 'confirmed', $3, $4, NULLIF($5, ''), NULLIF($6, '')::uuid)
+			RETURNING `+returningBooking, userID, slotID, string(channel), code, o.guestToken, o.hostBookingID))
 		if err == nil {
+			if o.usePass && o.guestToken == "" {
+				if err := usePassVisit(ctx, tx, b, venueID, startAt); err != nil {
+					return nil, err
+				}
+			}
 			return b, nil
 		}
 		if _, rbErr := tx.Exec(ctx, `ROLLBACK TO SAVEPOINT booking_insert`); rbErr != nil {
@@ -197,6 +221,9 @@ func bookInTx(ctx context.Context, tx pgx.Tx, userID, slotID string, channel mod
 	}
 	return nil, fmt.Errorf("could not generate unique check-in code")
 }
+
+// returningBooking — bookingColumns для RETURNING без псевдонима таблицы.
+var returningBooking = strings.ReplaceAll(bookingColumns, "b.", "")
 
 func checkinCode() (string, error) {
 	n, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
@@ -233,7 +260,17 @@ func (s *Store) CancelBooking(ctx context.Context, bookingID string) (*Promotion
 	if _, err := tx.Exec(ctx, `UPDATE bookings SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'user' WHERE id = $1`, bookingID); err != nil {
 		return nil, wrap("cancel booking", err)
 	}
-	if _, err := tx.Exec(ctx, `UPDATE slots SET quota_booked = GREATEST(quota_booked - 1, 0) WHERE id = $1`, slotID); err != nil {
+	if err := refundPassVisit(ctx, tx, bookingID); err != nil {
+		return nil, err
+	}
+	// Непринятое место для друга отменяется вместе с записью пригласившего.
+	tag, err := tx.Exec(ctx, `UPDATE bookings SET status = 'cancelled', cancelled_at = now(), cancel_reason = 'user'
+		WHERE host_booking_id = $1 AND guest_token IS NOT NULL AND status = 'confirmed'`, bookingID)
+	if err != nil {
+		return nil, wrap("cancel guest place", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE slots SET quota_booked = GREATEST(quota_booked - 1 - $2, 0) WHERE id = $1`,
+		slotID, tag.RowsAffected()); err != nil {
 		return nil, wrap("release quota", err)
 	}
 
@@ -260,7 +297,7 @@ func promoteFromWaitlist(ctx context.Context, tx pgx.Tx, slotID string) (*Promot
 	if err != nil {
 		return nil, wrap("pick waitlist", err)
 	}
-	b, err := bookInTx(ctx, tx, userID, slotID, model.SourceChannelBot)
+	b, err := bookInTx(ctx, tx, bookOpts{userID: userID, slotID: slotID, channel: model.SourceChannelBot, usePass: true})
 	if err != nil {
 		// Место не удалось отдать (например, у человека уже есть запись) — просто закрываем заявку.
 		if _, updErr := tx.Exec(ctx, `UPDATE waitlist SET status = 'cancelled' WHERE id = $1`, waitID); updErr != nil {
@@ -378,13 +415,13 @@ func (s *Store) SetRating(ctx context.Context, bookingID string, rating int) err
 // DueReminders24h — брони, которым пора прислать напоминание «за сутки».
 // Если запись сделана позже, чем за сутки до начала, это напоминание не нужно.
 func (s *Store) DueReminders24h(ctx context.Context, now time.Time) ([]model.BookingView, error) {
-	return s.queryViews(ctx, `WHERE b.status = 'confirmed' AND NOT b.reminder_24h_sent
+	return s.queryViews(ctx, `WHERE b.status = 'confirmed' AND NOT b.reminder_24h_sent AND b.guest_token IS NULL
 		AND s.start_at <= $1::timestamptz + interval '24 hours' AND s.start_at > $1::timestamptz + interval '3 hours'
 		AND b.created_at < s.start_at - interval '24 hours'`, now)
 }
 
 func (s *Store) DueReminders2h(ctx context.Context, now time.Time) ([]model.BookingView, error) {
-	return s.queryViews(ctx, `WHERE b.status = 'confirmed' AND NOT b.reminder_2h_sent
+	return s.queryViews(ctx, `WHERE b.status = 'confirmed' AND NOT b.reminder_2h_sent AND b.guest_token IS NULL
 		AND s.start_at <= $1::timestamptz + interval '2 hours' AND s.start_at > $1::timestamptz
 		AND b.created_at < s.start_at - interval '2 hours'`, now)
 }
@@ -400,7 +437,7 @@ func (s *Store) MarkReminderSent(ctx context.Context, bookingID string, kind str
 
 // PendingFeedback — отмеченные посещения, по которым ещё не спросили «Как прошло?».
 func (s *Store) PendingFeedback(ctx context.Context) ([]model.BookingView, error) {
-	return s.queryViews(ctx, `WHERE b.status = 'attended' AND NOT b.feedback_asked ORDER BY b.attended_at`)
+	return s.queryViews(ctx, `WHERE b.status = 'attended' AND NOT b.feedback_asked AND b.guest_token IS NULL ORDER BY b.attended_at`)
 }
 
 func (s *Store) MarkFeedbackAsked(ctx context.Context, bookingID string) error {

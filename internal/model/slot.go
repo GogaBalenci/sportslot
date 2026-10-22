@@ -35,6 +35,8 @@ type SlotInfo struct {
 	EndAt          time.Time `json:"end_at"`
 	QuotaTotal     int       `json:"quota_total"`
 	QuotaAvailable int       `json:"quota_available"`
+	// Repeats — занятие повторяется каждую неделю: можно записаться на несколько недель.
+	Repeats bool `json:"repeats,omitempty"`
 }
 
 func (s *Slot) Info() SlotInfo {
@@ -46,5 +48,6 @@ func (s *Slot) Info() SlotInfo {
 		EndAt:          s.EndAt,
 		QuotaTotal:     s.QuotaTotal,
 		QuotaAvailable: s.QuotaAvailable(),
+		Repeats:        s.TemplateID != "",
 	}
 }

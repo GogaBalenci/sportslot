@@ -31,7 +31,16 @@ type Booking struct {
 	CancelledAt   *time.Time    `json:"cancelled_at,omitempty"`
 	AttendedAt    *time.Time    `json:"attended_at,omitempty"`
 	// CancelReason — кто отменил: user или studio.
-	CancelReason string `json:"cancel_reason,omitempty"`
+	CancelReason string     `json:"cancel_reason,omitempty"`
+	Review       string     `json:"review,omitempty"`
+	ReviewedAt   *time.Time `json:"reviewed_at,omitempty"`
+	// GuestToken — место для друга, которое он ещё не принял по ссылке.
+	// Наружу не отдаётся: ссылку получает только пригласивший.
+	GuestToken    string     `json:"-"`
+	IsGuest       bool       `json:"is_guest,omitempty"`
+	HostBookingID string     `json:"host_booking_id,omitempty"`
+	UserPassID    string     `json:"user_pass_id,omitempty"`
+	PaidAt        *time.Time `json:"paid_at,omitempty"`
 }
 
 // BookingView — бронь вместе с занятием и площадкой: то, что видят
