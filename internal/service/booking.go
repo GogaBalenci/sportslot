@@ -13,6 +13,8 @@ type BookingService struct {
 	store     *postgres.Store
 	presenter Presenter
 	studio    StudioNotifier
+	client    ClientPresenter
+	deepLink  func(param string) string
 }
 
 // StudioNotifier сообщает администраторам студии о событиях с записями.

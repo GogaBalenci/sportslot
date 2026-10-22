@@ -15,7 +15,12 @@ import (
 type Presenter struct {
 	client *mc.Client
 	now    func() time.Time
+	// payable — можно ли оплатить пробное онлайн (студия включила оплату).
+	payable func(ctx context.Context, v *model.BookingView) bool
 }
+
+// SetPayable включает кнопку «Оплатить онлайн» в подтверждении записи.
+func (p *Presenter) SetPayable(f func(ctx context.Context, v *model.BookingView) bool) { p.payable = f }
 
 func NewPresenter(client *mc.Client) *Presenter {
 	return &Presenter{client: client, now: time.Now}
@@ -51,7 +56,9 @@ func confirmationText(v *model.BookingView, created bool) string {
 		b.WriteString("👌 <b>Ты уже записан на это занятие</b>\n\n")
 	}
 	b.WriteString(slotLine(v))
-	if trial := trialLabel(&v.Venue); trial != "" {
+	if v.UserPassID != "" {
+		b.WriteString("\n🎟 Занятие списано из абонемента")
+	} else if trial := trialLabel(&v.Venue); trial != "" {
 		b.WriteString("\n🎁 " + trial)
 	}
 	if v.Venue.WhatToBring != "" {
@@ -74,7 +81,14 @@ func lowerFirst(s string) string {
 
 // SendConfirmation — подтверждение записи и точка на карте отдельным сообщением.
 func (p *Presenter) SendConfirmation(ctx context.Context, v *model.BookingView, created bool, from *Origin) error {
-	if err := p.client.SendMessage(ctx, v.MaxUserID, confirmationText(v, created), bookingKeyboard(v, from)); err != nil {
+	kb := bookingKeyboard(v, from)
+	if v.PaidAt == nil && v.UserPassID == "" && p.payable != nil && p.payable(ctx, v) {
+		kb = append(mc.Keyboard{{mc.Callback("Оплатить онлайн · "+money(*v.Venue.TrialPrice), "pay:"+v.ID)}}, kb...)
+	}
+	if !v.IsGuest && v.Slot.QuotaAvailable() > 0 {
+		kb = append(kb, []mc.Button{mc.Callback("+1 место для друга", "fr:"+v.ID)})
+	}
+	if err := p.client.SendMessage(ctx, v.MaxUserID, confirmationText(v, created), kb); err != nil {
 		return err
 	}
 	if created {
@@ -135,6 +149,7 @@ var studioEventTitle = map[string]string{
 	"rescheduled": "🔁 <b>Клиент перенёс запись</b>",
 	"going":       "👍 <b>Клиент подтвердил, что придёт</b>",
 	"promoted":    "🎉 <b>Запись из листа ожидания</b>",
+	"friend":      "👥 <b>Клиент берёт с собой друга</b>",
 }
 
 // StudioEvent — уведомление администратору студии о событии с записью.

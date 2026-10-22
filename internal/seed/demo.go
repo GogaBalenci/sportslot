@@ -202,7 +202,8 @@ func ExpandSchedules(ctx context.Context, store *postgres.Store, now time.Time, 
 	}
 	created := 0
 	for _, t := range templates {
-		for day := 0; day <= 14; day++ {
+		// Четыре недели вперёд: в поиске видны две, остальное — для записи на несколько недель.
+		for day := 0; day <= 28; day++ {
 			date := now.AddDate(0, 0, day)
 			if int(date.Weekday()) != t.Weekday {
 				continue

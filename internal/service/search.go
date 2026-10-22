@@ -66,6 +66,8 @@ type VenueCard struct {
 	BeyondLimit    bool             `json:"beyond_limit,omitempty"`
 	Slots          []model.SlotInfo `json:"slots"`
 	AvailableSlots int              `json:"available_slots"`
+	// Rating — средняя оценка, если студия включила показ отзывов.
+	Rating *model.ReviewSummary `json:"rating,omitempty"`
 }
 
 func (q VenueSearch) origin() (float64, float64) {
@@ -130,6 +132,16 @@ func (s *SearchService) FindVenues(ctx context.Context, q VenueSearch, now time.
 
 	if q.HasPoint && q.Mode != "" {
 		cards = s.withTravel(ctx, cards, q)
+	}
+	if len(instantIDs) > 0 {
+		if ratings, err := s.store.PublicRatings(ctx, instantIDs); err == nil {
+			for i := range cards {
+				if r, ok := ratings[cards[i].Venue.ID]; ok {
+					r := r
+					cards[i].Rating = &r
+				}
+			}
+		}
 	}
 
 	sort.SliceStable(cards, func(i, j int) bool {
@@ -227,6 +239,16 @@ type VenueDetails struct {
 	model.Venue
 	VenueID  string           `json:"venue_id"`
 	AllSlots []model.SlotInfo `json:"all_slots"`
+	// Reviews — только если студия включила показ отзывов.
+	Reviews *model.ReviewSummary `json:"reviews,omitempty"`
+	Passes  []model.Pass         `json:"passes,omitempty"`
+	Online  *OnlinePayment       `json:"online_payment,omitempty"`
+}
+
+// OnlinePayment — что у студии можно оплатить онлайн.
+type OnlinePayment struct {
+	Trial  bool `json:"trial"`
+	Passes bool `json:"passes"`
 }
 
 // VenueDetails — площадка и её расписание на две недели.
@@ -247,8 +269,35 @@ func (s *SearchService) VenueDetails(ctx context.Context, id string, now time.Ti
 		for _, sl := range slots {
 			d.AllSlots = append(d.AllSlots, sl.Info())
 		}
+		if err := s.studioExtras(ctx, d); err != nil {
+			return nil, err
+		}
 	}
 	return d, nil
+}
+
+// studioExtras — отзывы, абонементы и онлайн-оплата студии с онлайн-записью.
+func (s *SearchService) studioExtras(ctx context.Context, d *VenueDetails) error {
+	settings, err := s.store.GetSettings(ctx, d.ID)
+	if err != nil {
+		return err
+	}
+	if settings.ShowReviews {
+		if d.Reviews, err = s.store.VenueReviews(ctx, d.ID, 5, false); err != nil {
+			return err
+		}
+	}
+	if d.Passes, err = s.store.ListPasses(ctx, d.ID, true); err != nil {
+		return err
+	}
+	if settings.PaymentsReady() {
+		price := 0
+		if d.TrialPrice != nil {
+			price = *d.TrialPrice
+		}
+		d.Online = &OnlinePayment{Trial: settings.TrialOnline && price > 0, Passes: len(d.Passes) > 0}
+	}
+	return nil
 }
 
 // SlotSearch — параметры исторического POST /api/v1/search (контракт DATA-API).

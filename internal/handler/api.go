@@ -24,6 +24,7 @@ type API struct {
 	bookings *service.BookingService
 	partner  *service.PartnerService
 	studio   *service.StudioService
+	commerce *service.CommerceService
 	auth     UserAuth
 	location LocationListener
 	geocoder *geocode.Geocoder
@@ -61,6 +62,16 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "booking_closed", "Запись на это занятие закрыта студией")
 	case errors.Is(err, service.ErrInvalidRequest):
 		writeError(w, http.StatusBadRequest, "invalid_request", "Некорректный запрос")
+	case errors.Is(err, service.ErrOwnInvite):
+		writeError(w, http.StatusConflict, "own_invite", "Это ваша ссылка — отправьте её другу")
+	case errors.Is(err, service.ErrPaymentsOff):
+		writeError(w, http.StatusConflict, "payments_off", "Онлайн-оплата у этой студии не подключена")
+	case errors.Is(err, service.ErrNothingToPay):
+		writeError(w, http.StatusConflict, "nothing_to_pay", "Оплачивать нечего: уже оплачено или бесплатно")
+	case errors.Is(err, service.ErrPaymentFailed):
+		writeError(w, http.StatusBadGateway, "payment_failed", "Платёжная система не приняла запрос. Попробуйте позже или оплатите в студии")
+	case errors.Is(err, service.ErrNoSecretKey):
+		writeError(w, http.StatusServiceUnavailable, "payments_unconfigured", "Сервер пока не настроен для хранения ключей оплаты (PAYMENT_SECRET_KEY)")
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Внутренняя ошибка, попробуйте позже")
 	}
@@ -252,6 +263,10 @@ func (a *API) CreateBooking(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		SlotID        string `json:"slot_id"`
 		SourceChannel string `json:"source_channel"`
+		// Weeks — записаться и на то же время в следующие недели (до 4).
+		Weeks int `json:"weeks"`
+		// WithFriend — сразу второе место для друга.
+		WithFriend bool `json:"with_friend"`
 	}
 	if !decode(w, r, &req) {
 		writeError(w, http.StatusBadRequest, "invalid_body", "Некорректное тело запроса")
@@ -269,6 +284,10 @@ func (a *API) CreateBooking(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_source_channel", "source_channel: bot или miniapp")
 		return
 	}
+	if req.Weeks < 0 || req.Weeks > 4 {
+		writeError(w, http.StatusBadRequest, "invalid_weeks", "weeks: от 1 до 4")
+		return
+	}
 	view, created, err := a.bookings.Book(r.Context(), u.MaxUserID, u.Name, req.SlotID, channel)
 	if err != nil {
 		if errors.Is(err, service.ErrNotFound) {
@@ -282,7 +301,32 @@ func (a *API) CreateBooking(w http.ResponseWriter, r *http.Request) {
 	if !created {
 		status = http.StatusOK
 	}
-	writeJSON(w, status, view)
+	if req.Weeks <= 1 && !req.WithFriend {
+		writeJSON(w, status, view)
+		return
+	}
+	resp := bookingResponse{BookingView: view}
+	if req.Weeks > 1 {
+		// Первая неделя уже записана; BookSeries вернёт её как существующую запись.
+		resp.Series, _ = a.bookings.BookSeries(r.Context(), u.MaxUserID, u.Name, req.SlotID, req.Weeks, channel)
+	}
+	if req.WithFriend {
+		place, err := a.bookings.AddFriend(r.Context(), view.ID, u.MaxUserID)
+		if err != nil {
+			resp.FriendError = "Для друга мест не осталось"
+		} else {
+			resp.Friend = place
+		}
+	}
+	writeJSON(w, status, resp)
+}
+
+// bookingResponse — запись и то, что создано вместе с ней.
+type bookingResponse struct {
+	*model.BookingView
+	Series      *service.SeriesResult `json:"series,omitempty"`
+	Friend      *service.FriendPlace  `json:"friend,omitempty"`
+	FriendError string                `json:"friend_error,omitempty"`
 }
 
 func (a *API) GetBooking(w http.ResponseWriter, r *http.Request) {
@@ -372,7 +416,8 @@ func (a *API) Feedback(w http.ResponseWriter, r *http.Request) {
 	u, _ := userFrom(r.Context())
 	id := chi.URLParam(r, "id")
 	var req struct {
-		Rating int `json:"rating"`
+		Rating int    `json:"rating"`
+		Review string `json:"review"`
 	}
 	if !validID(id) || !decode(w, r, &req) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Некорректный запрос")
@@ -381,6 +426,12 @@ func (a *API) Feedback(w http.ResponseWriter, r *http.Request) {
 	if _, err := a.bookings.Rate(r.Context(), id, u.MaxUserID, req.Rating); err != nil {
 		writeServiceError(w, err)
 		return
+	}
+	if strings.TrimSpace(req.Review) != "" {
+		if err := a.bookings.Review(r.Context(), id, u.MaxUserID, req.Review); err != nil {
+			writeServiceError(w, err)
+			return
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

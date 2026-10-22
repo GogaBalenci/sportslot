@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -18,6 +19,7 @@ type Dependencies struct {
 	Bookings      *service.BookingService
 	Partner       *service.PartnerService
 	Studio        *service.StudioService
+	Commerce      *service.CommerceService
 	Geocoder      *geocode.Geocoder
 	Bot           *bot.Bot
 	Auth          UserAuth
@@ -43,13 +45,18 @@ func NewRouter(deps Dependencies) http.Handler {
 		bookings: deps.Bookings,
 		partner:  deps.Partner,
 		studio:   deps.Studio,
+		commerce: deps.Commerce,
 		auth:     deps.Auth,
 		geocoder: deps.Geocoder,
 		logins:   newLimiter(10, time.Minute),
 		lookups:  newLimiter(40, time.Minute),
 		now:      time.Now,
 	}
-	health := NewHealthHandler()
+	var ping func(ctx context.Context) error
+	if deps.Bookings != nil {
+		ping = deps.Bookings.Store().Ping
+	}
+	health := NewHealthHandler(ping)
 
 	r.Get("/health", health.Health)
 	r.Route("/api/v1", func(r chi.Router) {
@@ -88,7 +95,21 @@ func NewRouter(deps Dependencies) http.Handler {
 			r.Get("/messages", api.ClientMessages)
 			r.Post("/messages", api.ClientSendMessage)
 			r.Post("/studio/invites/accept", api.AcceptInvite)
+			r.Post("/bookings/{id}/review", api.Review)
+			r.Get("/bookings/{id}/friend", api.Friend)
+			r.Post("/bookings/{id}/friend", api.AddFriend)
+			r.Post("/friends/claim", api.ClaimFriend)
+			r.Post("/bookings/{id}/pay", api.PayBooking)
+			r.Get("/payments/{id}", api.Payment)
+			r.Get("/me/passes", api.MyPasses)
+			r.Post("/passes/{id}/buy", api.BuyPass)
+			r.Post("/me/passes/{id}/pay", api.PayPass)
+			r.Post("/me/passes/{id}/cancel", api.CancelPassRequest)
 		})
+
+		// Уведомления платёжных систем: магазин определяется по студии в адресе.
+		r.Post("/payments/yookassa/{venueID}", api.YooKassaWebhook)
+		r.Post("/payments/tbank/{venueID}", api.TBankWebhook)
 
 		r.Get("/studio/me", api.StudioMe)
 		r.Group(func(r chi.Router) {
@@ -111,6 +132,15 @@ func NewRouter(deps Dependencies) http.Handler {
 				r.Get("/threads", api.StudioThreads)
 				r.Get("/threads/{userID}", api.StudioThread)
 				r.Post("/threads/{userID}", api.StudioReply)
+				r.Get("/settings", api.StudioSettings)
+				r.Patch("/settings", api.StudioSaveSettings)
+				r.Post("/settings/check", api.StudioCheckPayments)
+				r.Get("/commerce", api.StudioCommerce)
+				r.Post("/passes", api.StudioSavePass)
+				r.Put("/passes/{passID}", api.StudioSavePass)
+				r.Post("/user-passes/{userPassID}/confirm", api.StudioConfirmPass)
+				r.Post("/user-passes/{userPassID}/decline", api.StudioDeclinePass)
+				r.Get("/reviews", api.StudioReviews)
 			})
 			r.Get("/platform/studios", api.PlatformStudios)
 			r.Get("/platform/catalog", api.PlatformCatalog)

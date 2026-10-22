@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -38,6 +39,41 @@ func (r *studioRecorder) StudioReply(_ context.Context, client string, _ *model.
 }
 func (r *studioRecorder) SlotCancelled(_ context.Context, v *model.BookingView) error {
 	return r.push("cancelled:" + v.MaxUserID)
+}
+
+func (r *studioRecorder) StudioPassRequest(_ context.Context, admin string, up *model.UserPass) error {
+	return r.push("passreq:" + admin + ":" + up.MaxUserID)
+}
+func (r *studioRecorder) StudioPayment(_ context.Context, admin string, p *model.Payment, _ *model.Venue) error {
+	return r.push("paid:" + admin + ":" + p.Kind)
+}
+func (r *studioRecorder) StudioWaiting(_ context.Context, admin string, _ *model.Venue, _ string, _ time.Time, _ int64) error {
+	return r.push("waiting:" + admin)
+}
+func (r *studioRecorder) ClientWaiting(_ context.Context, client string, _ *model.Venue) error {
+	return r.push("client-waiting:" + client)
+}
+func (r *studioRecorder) StudioDigest(_ context.Context, admin string, _ time.Time, studios []service.DigestStudio) error {
+	n := 0
+	for _, s := range studios {
+		n += len(s.Today)
+	}
+	return r.push(fmt.Sprintf("digest:%s:%d", admin, n))
+}
+func (r *studioRecorder) FriendInvite(_ context.Context, host string, _ *model.BookingView, _ string) error {
+	return r.push("friend-invite:" + host)
+}
+func (r *studioRecorder) FriendJoined(_ context.Context, host, _ string, _ *model.BookingView) error {
+	return r.push("friend-joined:" + host)
+}
+func (r *studioRecorder) PaymentReceived(_ context.Context, p *model.Payment, _ *model.BookingView, _ *model.UserPass) error {
+	return r.push("payment-received:" + p.MaxUserID + ":" + p.Kind)
+}
+func (r *studioRecorder) PassActivated(_ context.Context, up *model.UserPass) error {
+	return r.push("pass-active:" + up.MaxUserID)
+}
+func (r *studioRecorder) PassDeclined(_ context.Context, up *model.UserPass) error {
+	return r.push("pass-declined:" + up.MaxUserID)
 }
 
 func (r *studioRecorder) expect(t *testing.T, want string) {

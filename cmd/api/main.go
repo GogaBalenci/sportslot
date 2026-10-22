@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -16,8 +17,11 @@ import (
 	"sportslot/internal/geocode"
 	"sportslot/internal/handler"
 	"sportslot/internal/maxclient"
+	"sportslot/internal/model"
+	"sportslot/internal/payments"
 	"sportslot/internal/repository/postgres"
 	"sportslot/internal/routing"
+	"sportslot/internal/secret"
 	"sportslot/internal/seed"
 	"sportslot/internal/service"
 	"sportslot/migrations"
@@ -80,13 +84,38 @@ func main() {
 	geocoder := geocode.New(cfg.DGISCatalogURL, cfg.DGISAPIKey)
 	chatBot.SetGeocoder(geocoder)
 
+	link := deepLinks(ctx, client, cfg)
 	studio := service.NewStudioService(store, partner, cfg.PlatformAdminIDs)
 	studio.SetPresenter(presenter)
 	studio.SetGeocoder(geocoder)
-	studio.SetInviteURL(inviteURL(ctx, client, cfg))
+	studio.SetInviteURL(func(token string) string { return link("studio_" + token) })
 	bookings.SetStudioNotifier(studio)
+	bookings.SetClientPresenter(presenter)
+	bookings.SetDeepLink(link)
 	chatBot.SetStudio(studio)
 	log.Printf("platform admins: %d", len(cfg.PlatformAdminIDs))
+
+	box, err := secret.New(cfg.PaymentSecretKey)
+	if err != nil {
+		log.Fatalf("payments: %v", err)
+	}
+	if !box.Ready() {
+		log.Println("PAYMENT_SECRET_KEY is empty: studios cannot save payment keys")
+	}
+	commerce := service.NewCommerceService(store, payments.NewGateway(cfg.YooKassaAPIURL, cfg.TBankAPIURL), box, studio)
+	commerce.SetClientPresenter(presenter)
+	commerce.SetDeepLink(link)
+	commerce.SetPublicURL(cfg.PublicURL)
+	chatBot.SetCommerce(commerce)
+	presenter.SetPayable(func(ctx context.Context, v *model.BookingView) bool {
+		if v.Venue.TrialPrice == nil || *v.Venue.TrialPrice <= 0 {
+			return false
+		}
+		st, err := store.GetSettings(ctx, v.Venue.ID)
+		return err == nil && st.PaymentsReady() && st.TrialOnline
+	})
+	started := time.Now()
+	chatBot.SetStatus(func(ctx context.Context) string { return statusReport(ctx, store, started) })
 
 	testUsers := map[string]bool{}
 	for _, id := range cfg.TestMaxUserIDs {
@@ -97,6 +126,7 @@ func main() {
 		Bookings: bookings,
 		Partner:  partner,
 		Studio:   studio,
+		Commerce: commerce,
 		Geocoder: geocoder,
 		Bot:      chatBot,
 		Auth: handler.UserAuth{
@@ -110,6 +140,8 @@ func main() {
 	})
 
 	notifier := service.NewNotifier(store, presenter, cfg.NotifierInterval, cfg.DemoData)
+	notifier.AddJob(commerce.Tick)
+	notifier.AddJob(studio.StudioTick)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -176,15 +208,57 @@ func initMaxBot(ctx context.Context, client *maxclient.Client, cfg *config.Confi
 	log.Printf("MAX webhook subscribed: %s", cfg.MaxWebhookURL)
 }
 
-// inviteURL — ссылка-приглашение администратора студии. Внутри MAX она
-// открывает мини-приложение бота с параметром studio_<токен>.
-func inviteURL(ctx context.Context, client *maxclient.Client, cfg *config.Config) func(string) string {
-	return func(token string) string {
-		reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		if info, err := client.Bot(reqCtx); err == nil && info.Username != "" {
-			return "https://max.ru/" + info.Username + "?startapp=studio_" + token
+// deepLinks — ссылка, которая открывает мини-приложение бота с параметром
+// запуска (приглашение студии, место для друга, возврат после оплаты).
+// Имя бота запрашивается у MAX один раз и запоминается.
+func deepLinks(ctx context.Context, client *maxclient.Client, cfg *config.Config) func(string) string {
+	var (
+		mu       sync.Mutex
+		username string
+	)
+	return func(param string) string {
+		mu.Lock()
+		defer mu.Unlock()
+		if username == "" && client.Enabled() {
+			reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			if info, err := client.Bot(reqCtx); err == nil {
+				username = info.Username
+			}
+			cancel()
 		}
-		return strings.TrimRight(cfg.MiniAppURL, "/") + "/?start=studio_" + token
+		if username != "" {
+			return "https://max.ru/" + username + "?startapp=" + param
+		}
+		return strings.TrimRight(cfg.MiniAppURL, "/") + "/?start=" + param
 	}
+}
+
+// statusReport — ответ на /status для владельцев платформы.
+func statusReport(ctx context.Context, store *postgres.Store, started time.Time) string {
+	var b strings.Builder
+	up := int(time.Since(started).Minutes())
+	fmt.Fprintf(&b, "🟢 <b>API работает</b> %d ч %d мин\n", up/60, up%60)
+	if err := store.Ping(ctx); err != nil {
+		b.WriteString("🔴 База недоступна\n")
+	} else {
+		b.WriteString("🟢 База отвечает\n")
+	}
+	ops, err := store.OpsStatus(ctx)
+	if err != nil {
+		return b.String()
+	}
+	if v, ok := ops["backup_ok"]; ok {
+		fmt.Fprintf(&b, "💾 Последний бэкап: %s, %s\n", v.UpdatedAt.In(time.Local).Format("02.01 15:04"), v.Value)
+	} else {
+		b.WriteString("💾 Бэкапов ещё не было\n")
+	}
+	if v, ok := ops["backup_error"]; ok && v.UpdatedAt.After(ops["backup_ok"].UpdatedAt) {
+		fmt.Fprintf(&b, "⚠️ Ошибка бэкапа %s: %s\n", v.UpdatedAt.In(time.Local).Format("02.01 15:04"), v.Value)
+	}
+	if v, ok := ops["watchdog"]; ok {
+		fmt.Fprintf(&b, "👀 Мониторинг: проверка %d с назад (%s)\n", int(time.Since(v.UpdatedAt).Seconds()), v.Value)
+	} else {
+		b.WriteString("👀 Мониторинг не запущен\n")
+	}
+	return b.String()
 }

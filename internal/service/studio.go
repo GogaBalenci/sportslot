@@ -32,6 +32,11 @@ type StudioPresenter interface {
 	StudioMessage(ctx context.Context, adminMaxID string, venue *model.Venue, client *model.User, text string, messageID int64) error
 	StudioReply(ctx context.Context, clientMaxID string, venue *model.Venue, text string) error
 	SlotCancelled(ctx context.Context, v *model.BookingView) error
+	StudioPassRequest(ctx context.Context, adminMaxID string, up *model.UserPass) error
+	StudioPayment(ctx context.Context, adminMaxID string, p *model.Payment, venue *model.Venue) error
+	StudioWaiting(ctx context.Context, adminMaxID string, venue *model.Venue, clientName string, since time.Time, messageID int64) error
+	ClientWaiting(ctx context.Context, clientMaxID string, venue *model.Venue) error
+	StudioDigest(ctx context.Context, adminMaxID string, day time.Time, studios []DigestStudio) error
 }
 
 // Access — к каким студиям есть доступ у того, кто открыл кабинет.
@@ -326,7 +331,8 @@ func (s *StudioService) CancelSlot(ctx context.Context, a Access, venueID, slotI
 			defer cancel()
 			for _, id := range ids {
 				view, err := s.store.GetBookingView(ctx, id)
-				if err != nil {
+				if err != nil || view.IsGuest {
+					// Непринятое место для друга принадлежит пригласившему — ему уже пишем.
 					continue
 				}
 				if err := s.presenter.SlotCancelled(ctx, view); err != nil {
@@ -338,12 +344,22 @@ func (s *StudioService) CancelSlot(ctx context.Context, a Access, venueID, slotI
 	return len(ids), nil
 }
 
-func (s *StudioService) Stats(ctx context.Context, a Access, venueID string) (*model.StudioStats, error) {
+func (s *StudioService) Stats(ctx context.Context, a Access, venueID string) (*StatsFull, error) {
 	if _, err := s.venue(ctx, a, venueID); err != nil {
 		return nil, err
 	}
 	now := s.now()
-	return s.store.StudioStats(ctx, venueID, now.AddDate(0, 0, -30), now)
+	since := now.AddDate(0, 0, -30)
+	base, err := s.store.StudioStats(ctx, venueID, since, now)
+	if err != nil {
+		return nil, err
+	}
+	full := &StatsFull{StudioStats: base}
+	if full.Response, err = s.store.ResponseStats(ctx, venueID, since); err != nil {
+		return nil, err
+	}
+	full.Paid, err = s.store.PaymentTotals(ctx, []string{venueID}, since, now)
+	return full, err
 }
 
 type VenueProfile struct {
@@ -670,7 +686,11 @@ func (s *StudioService) RemoveAdmin(ctx context.Context, a Access, venueID, maxU
 }
 
 func (s *StudioService) event(ctx context.Context, a Access, kind string, payload map[string]interface{}) {
-	if err := s.store.LogEvent(ctx, a.MaxUserID, kind, payload); err != nil {
+	s.logEvent(ctx, a.MaxUserID, kind, payload)
+}
+
+func (s *StudioService) logEvent(ctx context.Context, maxUserID, kind string, payload map[string]interface{}) {
+	if err := s.store.LogEvent(ctx, maxUserID, kind, payload); err != nil {
 		log.Printf("event %s: %v", kind, err)
 	}
 }

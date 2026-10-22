@@ -18,7 +18,9 @@ import (
 	"sportslot/internal/geocode"
 	"sportslot/internal/handler"
 	"sportslot/internal/maxclient"
+	"sportslot/internal/payments"
 	"sportslot/internal/routing"
+	"sportslot/internal/secret"
 	"sportslot/internal/seed"
 	"sportslot/internal/service"
 	"sportslot/internal/testdb"
@@ -93,9 +95,15 @@ func newServer(t *testing.T) (*httptest.Server, *fakeMax) {
 	studio.SetPresenter(presenter)
 	studio.SetGeocoder(geocoder)
 	bookings.SetStudioNotifier(studio)
+	bookings.SetClientPresenter(presenter)
+	bookings.SetDeepLink(func(p string) string { return "https://max.ru/bot?startapp=" + p })
 	chatBot.SetStudio(studio)
+	box, _ := secret.New(strings.Repeat("cd", 32))
+	commerce := service.NewCommerceService(store, payments.NewGateway(dgis, dgis), box, studio)
+	commerce.SetClientPresenter(presenter)
+	chatBot.SetCommerce(commerce)
 	router := handler.NewRouter(handler.Dependencies{
-		Search: search, Bookings: bookings, Partner: partner, Geocoder: geocoder, Studio: studio,
+		Search: search, Bookings: bookings, Partner: partner, Geocoder: geocoder, Studio: studio, Commerce: commerce,
 		Bot:         chatBot,
 		Auth:        handler.UserAuth{BotToken: botToken, MaxAge: time.Hour, TestUsers: map[string]bool{seed.TestMaxUserID: true}},
 		CORSOrigins: []string{"*"}, WebhookSecret: "hook-secret",
@@ -512,5 +520,105 @@ func TestLocationFromMiniAppContinuesChat(t *testing.T) {
 	max.next(t, "Как будешь добираться")
 	if status, _ := call(t, http.MethodPost, srv.URL+"/api/v1/me/location", tma(777), map[string]float64{"lat": 55.75, "lon": 37.61}); status != http.StatusBadRequest {
 		t.Fatalf("point outside Rostov: want 400, got %d", status)
+	}
+}
+
+// TestFriendSeriesAndPaymentWebhooks — запись с другом и на несколько недель,
+// отзыв, уведомления платёжных систем по неизвестному платежу.
+func TestFriendSeriesAndPaymentWebhooks(t *testing.T) {
+	srv, max := newServer(t)
+	host, friend := tma(301), tma(302)
+	venue := "a1111111-0000-0000-0000-000000000006"
+	_, details := call(t, http.MethodGet, srv.URL+"/api/v1/venues/"+venue, nil, nil)
+	var slotID string
+	for _, raw := range details["all_slots"].([]interface{}) {
+		sl := raw.(map[string]interface{})
+		if sl["repeats"] == true && sl["quota_available"].(float64) >= 2 {
+			slotID = sl["slot_id"].(string)
+			break
+		}
+	}
+	if slotID == "" {
+		t.Fatal("no repeating slot with two free places")
+	}
+	status, booking := call(t, http.MethodPost, srv.URL+"/api/v1/bookings", host,
+		map[string]interface{}{"slot_id": slotID, "weeks": 2, "with_friend": true})
+	if status != http.StatusCreated {
+		t.Fatalf("book: %d %v", status, booking)
+	}
+	series := booking["series"].(map[string]interface{})
+	if n := len(series["bookings"].([]interface{})) + len(series["skipped"].([]interface{})); n != 2 {
+		t.Fatalf("series must cover two weeks: %v", series)
+	}
+	place := booking["friend"].(map[string]interface{})
+	link := place["link"].(string)
+	if !strings.Contains(link, "startapp=friend_") {
+		t.Fatalf("friend link: %v", place)
+	}
+	if _, ok := place["booking"].(map[string]interface{})["guest_token"]; ok {
+		t.Fatal("guest token must not be exposed as a field")
+	}
+	token := link[strings.Index(link, "friend_"):]
+	if status, body := call(t, http.MethodPost, srv.URL+"/api/v1/friends/claim", host, map[string]string{"token": token}); status != http.StatusConflict {
+		t.Fatalf("own link: %d %v", status, body)
+	}
+	status, claimed := call(t, http.MethodPost, srv.URL+"/api/v1/friends/claim", friend, map[string]string{"token": token})
+	if status != http.StatusOK || claimed["slot_id"] != slotID {
+		t.Fatalf("claim: %d %v", status, claimed)
+	}
+	max.next(t, "принял приглашение")
+	if status, _ := call(t, http.MethodPost, srv.URL+"/api/v1/friends/claim", tma(303), map[string]string{"token": token}); status != http.StatusNotFound {
+		t.Fatalf("used link: %d", status)
+	}
+
+	// Оплата у студии не подключена.
+	if status, body := call(t, http.MethodPost, srv.URL+"/api/v1/bookings/"+booking["id"].(string)+"/pay", host, nil); status != http.StatusConflict || body["code"] != "payments_off" {
+		t.Fatalf("pay without payments: %d %v", status, body)
+	}
+	// Уведомления по неизвестным платежам принимаются без ошибок и без побочных эффектов.
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/v1/payments/tbank/"+venue,
+		strings.NewReader(`{"TerminalKey":"x","OrderId":"00000000-0000-0000-0000-000000000000","Status":"CONFIRMED","Token":"x"}`))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || string(raw) != "OK" {
+		t.Fatalf("tbank webhook: %d %s", resp.StatusCode, raw)
+	}
+	if status, _ := call(t, http.MethodPost, srv.URL+"/api/v1/payments/yookassa/"+venue, nil,
+		map[string]interface{}{"event": "payment.succeeded", "object": map[string]string{"id": "unknown"}}); status != http.StatusOK {
+		t.Fatalf("yookassa webhook: %d", status)
+	}
+}
+
+// TestBotReviewAndFriendButtons — после оценки следующий текст становится
+// отзывом; «+1 место для друга» присылает сообщение со ссылкой для пересылки.
+func TestBotReviewAndFriendButtons(t *testing.T) {
+	srv, max := newServer(t)
+	user := tma(777)
+	_, booking := call(t, http.MethodPost, srv.URL+"/api/v1/bookings", user, map[string]string{"slot_id": seed.ReferenceSlotTwo})
+	id := booking["id"].(string)
+
+	webhook(t, srv, callback("fr:"+id))
+	max.next(t, "Место для друга забронировано")
+	invite := max.next(t, "startapp=friend_")
+	if !strings.Contains(invite, "Пойдём вместе") {
+		t.Fatalf("invite text: %s", invite)
+	}
+
+	_, login := call(t, http.MethodPost, srv.URL+"/api/v1/partner/login", nil, map[string]string{"code": "partner-code"})
+	partner := map[string]string{"Authorization": "Partner " + login["token"].(string)}
+	if status, body := call(t, http.MethodPost, srv.URL+"/api/v1/partner/checkin", partner, map[string]string{"code": booking["checkin_code"].(string)}); status != http.StatusOK {
+		t.Fatalf("check-in: %d %v", status, body)
+	}
+	webhook(t, srv, callback("rt:"+id+":5"))
+	max.next(t, "пару слов о занятии")
+	webhook(t, srv, `{"update_type":"message_created","message":{"sender":{"user_id":777,"first_name":"Олег"},"body":{"text":"Хороший тренер, приду ещё"}}}`)
+	max.next(t, "Спасибо за отзыв")
+	_, view := call(t, http.MethodGet, srv.URL+"/api/v1/bookings/"+id, user, nil)
+	if view["review"] != "Хороший тренер, приду ещё" {
+		t.Fatalf("review was not saved: %v", view["review"])
 	}
 }

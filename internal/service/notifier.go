@@ -18,7 +18,11 @@ type Notifier struct {
 	interval  time.Duration
 	demo      bool
 	lastSync  time.Time
+	jobs      []func(ctx context.Context, now time.Time)
 }
+
+// AddJob — ещё одна задача на каждом такте: оплаты, сводки, напоминания студиям.
+func (n *Notifier) AddJob(job func(ctx context.Context, now time.Time)) { n.jobs = append(n.jobs, job) }
 
 func NewNotifier(store *postgres.Store, presenter Presenter, interval time.Duration, demo bool) *Notifier {
 	if interval <= 0 {
@@ -61,6 +65,9 @@ func (n *Notifier) Tick(ctx context.Context, now time.Time) {
 
 	if _, err := n.store.MarkNoShows(ctx, now); err != nil {
 		log.Printf("notifier: no-shows: %v", err)
+	}
+	for _, job := range n.jobs {
+		job(ctx, now)
 	}
 	// Расписание студий по шаблонам продлевается, чтобы всегда было на две недели вперёд.
 	if now.Sub(n.lastSync) > 6*time.Hour {

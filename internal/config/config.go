@@ -39,6 +39,13 @@ type Config struct {
 	PlatformAdminIDs []string
 	InitDataMaxAge   time.Duration
 	NotifierInterval time.Duration
+
+	// PaymentSecretKey — ключ AES-256 (64 hex-символа) для ключей магазинов студий.
+	PaymentSecretKey string
+	YooKassaAPIURL   string
+	TBankAPIURL      string
+	// PublicURL — адрес, на который платёжные системы шлют уведомления (https://домен).
+	PublicURL string
 }
 
 func Load() (*Config, error) {
@@ -61,7 +68,11 @@ func Load() (*Config, error) {
 		PartnerDemoCode:  os.Getenv("PARTNER_DEMO_CODE"),
 		TestMaxUserIDs:   splitList(getEnv("TEST_MAX_USER_IDS", "max-test-user-001")),
 		PlatformAdminIDs: splitList(os.Getenv("PLATFORM_ADMIN_IDS")),
+		PaymentSecretKey: os.Getenv("PAYMENT_SECRET_KEY"),
+		YooKassaAPIURL:   getEnv("YOOKASSA_API_URL", "https://api.yookassa.ru"),
+		TBankAPIURL:      getEnv("TBANK_API_URL", "https://securepay.tinkoff.ru"),
 	}
+	cfg.PublicURL = strings.TrimRight(getEnv("PUBLIC_URL", cfg.MiniAppURL), "/")
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
 	}

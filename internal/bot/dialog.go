@@ -47,8 +47,10 @@ type state struct {
 	Offset    int     `json:"offset,omitempty"`
 	QuizIndex int     `json:"quiz_index,omitempty"`
 	// MsgVenue — студия, которой пользователь пишет сообщение.
-	MsgVenue string            `json:"msg_venue,omitempty"`
-	Answers  map[string]string `json:"answers,omitempty"`
+	MsgVenue string `json:"msg_venue,omitempty"`
+	// ReviewBooking — посещение, к которому пользователь может написать отзыв.
+	ReviewBooking string            `json:"review_booking,omitempty"`
+	Answers       map[string]string `json:"answers,omitempty"`
 }
 
 const (
@@ -58,6 +60,7 @@ const (
 	stepWhere   = "where"
 	stepTravel  = "travel"
 	stepMessage = "message"
+	stepReview  = "review"
 	stepResults = "results"
 	pageSize    = 3
 )
@@ -70,8 +73,16 @@ type Bot struct {
 	presenter *Presenter
 	geocoder  *geocode.Geocoder
 	studio    *service.StudioService
+	commerce  *service.CommerceService
+	status    func(ctx context.Context) string
 	now       func() time.Time
 }
+
+// SetCommerce включает оплату пробного занятия из чата.
+func (b *Bot) SetCommerce(c *service.CommerceService) { b.commerce = c }
+
+// SetStatus — отчёт для команды /status (только для владельцев платформы).
+func (b *Bot) SetStatus(f func(ctx context.Context) string) { b.status = f }
 
 // SetStudio включает переписку клиентов со студиями.
 func (b *Bot) SetStudio(s *service.StudioService) { b.studio = s }
@@ -142,8 +153,8 @@ func (b *Bot) Handle(ctx context.Context, in Incoming) {
 
 func (b *Bot) callback(ctx context.Context, in Incoming, st state) {
 	cmd, arg, _ := strings.Cut(in.Payload, ":")
-	if st.Step == stepMessage && cmd != "msg" {
-		st.Step, st.MsgVenue = stepMenu, ""
+	if (st.Step == stepMessage && cmd != "msg") || st.Step == stepReview {
+		st.Step, st.MsgVenue, st.ReviewBooking = stepMenu, "", ""
 		b.save(ctx, in.MaxUserID, st)
 	}
 	switch cmd {
@@ -220,6 +231,10 @@ func (b *Bot) callback(ctx context.Context, in Incoming, st state) {
 	case "rt":
 		bookingID, rating, _ := strings.Cut(arg, ":")
 		b.rate(ctx, in, bookingID, rating)
+	case "fr":
+		b.addFriend(ctx, in, arg)
+	case "pay":
+		b.payTrial(ctx, in, arg)
 	default:
 		b.menu(ctx, in, false)
 	}
@@ -240,9 +255,18 @@ func (b *Bot) text(ctx context.Context, in Incoming, st state) {
 	case "/id":
 		b.reply(ctx, in, "Твой ID в MAX: <code>"+esc(in.MaxUserID)+"</code>\n<i>Он нужен, чтобы назначить владельца платформы (PLATFORM_ADMIN_IDS).</i>", nil)
 		return
+	case "/status":
+		if b.status != nil && b.studio != nil && b.studio.IsPlatform(in.MaxUserID) {
+			b.reply(ctx, in, b.status(ctx), nil)
+			return
+		}
 	}
 	if st.Step == stepMessage && st.MsgVenue != "" {
 		b.sendMessage(ctx, in, st)
+		return
+	}
+	if st.Step == stepReview && st.ReviewBooking != "" {
+		b.saveReview(ctx, in, st)
 		return
 	}
 
@@ -790,20 +814,24 @@ func (b *Bot) rate(ctx context.Context, in Incoming, bookingID, raw string) {
 		b.reply(ctx, in, "Оценку уже не получится поставить, но спасибо!", nil)
 		return
 	}
+	// Следующее текстовое сообщение станет отзывом; любая кнопка отменяет ожидание.
+	b.save(ctx, in.MaxUserID, state{Step: stepReview, ReviewBooking: bookingID})
+	ask := "\n\n✍️ <i>Можешь написать пару слов о занятии одним сообщением — отзыв поможет другим выбрать студию.</i>"
 	text := "💪 <b>Спасибо за оценку!</b>"
 	if rating <= 3 {
-		text = "<b>Спасибо, что честно.</b>\nМожно попробовать другой зал или другой вид спорта — подберём?"
+		text = "<b>Спасибо, что честно.</b>\nМожно попробовать другой зал или другой вид спорта — подберём?" +
+			"\n\n✍️ <i>Если напишешь, что не понравилось, студия увидит и сможет исправить.</i>"
 		b.reply(ctx, in, text, mc.Keyboard{{mc.Callback("Подобрать другое", "quiz")}, {mc.Callback("В начало", "menu")}})
 		return
 	}
 	next, err := b.bookings.NextWeek(ctx, view)
 	if err != nil {
-		b.reply(ctx, in, text+"\nГлавное теперь — не бросить. Запишись на следующее занятие, пока настрой есть.",
+		b.reply(ctx, in, text+"\nГлавное теперь — не бросить. Запишись на следующее занятие, пока настрой есть."+ask,
 			mc.Keyboard{{mc.Callback("Выбрать время", "vs:"+view.Venue.ID)}})
 		return
 	}
-	b.reply(ctx, in, fmt.Sprintf("%s\nЧтобы вошло в привычку, запишу на то же время через неделю — <b>%s, %s</b>?",
-		text, dayLabel(next.StartAt, b.now()), clock(next.StartAt)), mc.Keyboard{
+	b.reply(ctx, in, fmt.Sprintf("%s\nЧтобы вошло в привычку, запишу на то же время через неделю — <b>%s, %s</b>?%s",
+		text, dayLabel(next.StartAt, b.now()), clock(next.StartAt), ask), mc.Keyboard{
 		{mc.Callback("Записаться", "bk:"+next.ID)},
 		{mc.Callback("Выбрать другое время", "vs:"+view.Venue.ID)},
 	})
@@ -939,4 +967,57 @@ func (b *Bot) sendMessage(ctx context.Context, in Incoming, st state) {
 		return
 	}
 	b.reply(ctx, in, "📨 <b>Отправил студии</b>\nОтвет придёт сюда, в чат.", mc.Keyboard{{mc.Callback("Мои записи", "my")}})
+}
+
+func (b *Bot) saveReview(ctx context.Context, in Incoming, st state) {
+	bookingID := st.ReviewBooking
+	b.save(ctx, in.MaxUserID, state{Step: stepMenu})
+	if err := b.bookings.Review(ctx, bookingID, in.MaxUserID, in.Text); err != nil {
+		if errors.Is(err, service.ErrInvalidRequest) {
+			b.reply(ctx, in, "Отзыв не сохранил: нужен текст до 500 символов.", nil)
+			return
+		}
+		b.reply(ctx, in, "Не получилось сохранить отзыв, но оценка записана. Спасибо!", nil)
+		return
+	}
+	b.reply(ctx, in, "🙏 <b>Спасибо за отзыв!</b>", mc.Keyboard{{mc.Callback("Мои записи", "my")}})
+}
+
+func (b *Bot) addFriend(ctx context.Context, in Incoming, bookingID string) {
+	place, err := b.bookings.AddFriend(ctx, bookingID, in.MaxUserID)
+	switch {
+	case err == nil:
+	case errors.Is(err, service.ErrQuotaExceeded):
+		b.reply(ctx, in, "😕 На это занятие свободных мест больше нет — для друга не хватило.", mc.Keyboard{{mc.Callback("Мои записи", "my")}})
+		return
+	default:
+		b.reply(ctx, in, "Не получилось забронировать место для друга: запись уже неактивна.", mc.Keyboard{{mc.Callback("Мои записи", "my")}})
+		return
+	}
+	if place.Claimed {
+		b.reply(ctx, in, "👥 Друг уже принял приглашение на это занятие: "+esc(place.FriendName)+".", nil)
+		return
+	}
+	if err := b.bookings.SendFriendInvite(ctx, place, in.MaxUserID); err != nil {
+		log.Printf("bot: friend invite: %v", err)
+	}
+}
+
+func (b *Bot) payTrial(ctx context.Context, in Incoming, bookingID string) {
+	if b.commerce == nil {
+		return
+	}
+	pay, err := b.commerce.PayTrial(ctx, in.MaxUserID, bookingID)
+	switch {
+	case err == nil:
+		b.reply(ctx, in, fmt.Sprintf("💳 <b>Оплата пробного занятия — %s</b>\nОткроется страница оплаты студии: карта или СБП. После оплаты пришлю подтверждение.",
+			money(pay.Amount/100)), mc.Keyboard{{mc.Link("Оплатить "+money(pay.Amount/100), pay.ConfirmationURL)}})
+	case errors.Is(err, service.ErrNothingToPay):
+		b.reply(ctx, in, "Оплачивать нечего: занятие уже оплачено или по абонементу.", nil)
+	case errors.Is(err, service.ErrPaymentsOff):
+		b.reply(ctx, in, "Студия сейчас не принимает оплату онлайн — оплатишь на месте.", nil)
+	default:
+		log.Printf("bot: pay trial %s: %v", bookingID, err)
+		b.reply(ctx, in, "Платёжная система не ответила. Попробуй позже или оплати на месте.", nil)
+	}
 }
