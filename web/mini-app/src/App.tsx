@@ -5,7 +5,9 @@ import { insideMax, setBackButton, startParam } from './max'
 import { NavContext, routeFromStart, type Nav, type Origin, type Route } from './nav'
 import { MyScreen } from './screens/MyScreen'
 import { ChatScreen } from './screens/ChatScreen'
+import { FriendScreen } from './screens/FriendScreen'
 import { GeoScreen } from './screens/GeoScreen'
+import { PaymentScreen } from './screens/PaymentScreen'
 import { QuizScreen } from './screens/QuizScreen'
 import { SearchScreen } from './screens/SearchScreen'
 import { TicketScreen } from './screens/TicketScreen'
@@ -27,6 +29,7 @@ function initialStack(): Route[] {
   if (first.name === 'venue') return [{ name: 'search' }, first]
   if (first.name === 'ticket') return [{ name: 'my' }, first]
   if (first.name === 'studioBooking') return [{ name: 'studio' }, first]
+  if (first.name === 'payment' || first.name === 'friend') return [{ name: 'my' }, first]
   return [first]
 }
 
@@ -122,6 +125,12 @@ export default function App() {
       break
     case 'geo':
       screen = <GeoScreen />
+      break
+    case 'friend':
+      screen = <FriendScreen token={route.token} />
+      break
+    case 'payment':
+      screen = <PaymentScreen key={route.id} id={route.id} />
       break
     case 'chat':
       screen = <ChatScreen key={route.venueId} venueId={route.venueId} venueName={route.venueName} />

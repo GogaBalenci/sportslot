@@ -6,11 +6,13 @@ import { useNav } from '../nav'
 import { BookingsTab } from './BookingsTab'
 import { HelpTab } from './HelpTab'
 import { MessagesTab } from './MessagesTab'
+import { PassesTab } from './PassesTab'
+import { PaymentsTab } from './PaymentsTab'
 import { ProfileTab } from './ProfileTab'
 import { ScheduleTab } from './ScheduleTab'
 import { StatsTab } from './StatsTab'
 
-type Tab = 'bookings' | 'schedule' | 'messages' | 'stats' | 'profile' | 'help'
+type Tab = 'bookings' | 'schedule' | 'passes' | 'messages' | 'stats' | 'profile' | 'payments' | 'help'
 
 function DemoLogin({ onDone }: { onDone: () => void }) {
   const [code, setCode] = useState('')
@@ -91,8 +93,10 @@ export function StudioScreen({ venueId, tab }: { venueId?: string; tab?: string 
     { id: 'bookings', title: 'Записи' },
     { id: 'schedule', title: 'Расписание' },
     { id: 'messages', title: unread ? `Сообщения · ${unread}` : 'Сообщения' },
+    { id: 'passes', title: 'Абонементы' },
     { id: 'stats', title: 'Статистика' },
     { id: 'profile', title: 'Профиль' },
+    { id: 'payments', title: 'Оплата' },
     { id: 'help', title: 'Как работать' },
   ]
 
@@ -134,6 +138,8 @@ export function StudioScreen({ venueId, tab }: { venueId?: string; tab?: string 
           {current && active === 'bookings' && <BookingsTab venueId={current} />}
           {current && active === 'schedule' && <ScheduleTab venueId={current} />}
           {current && active === 'messages' && <MessagesTab venueId={current} onRead={load} />}
+          {current && active === 'passes' && <PassesTab venueId={current} />}
+          {current && active === 'payments' && <PaymentsTab venueId={current} readOnly={data.demo} />}
           {current && active === 'stats' && <StatsTab venueId={current} />}
           {current && active === 'profile' && summary && <ProfileTab venue={summary.venue} readOnly={data.demo} onSaved={load} />}
           {active === 'help' && <HelpTab />}

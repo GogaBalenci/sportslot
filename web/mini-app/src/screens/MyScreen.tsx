@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { ChevronRight, MapPin, Store } from 'lucide-react'
-import { ApiError, api, type Booking } from '../api'
+import { ApiError, api, type Booking, type UserPass } from '../api'
 import { Btn, Empty, ErrorBlock, Loader } from '../components'
-import { code, dayNumber, dayTitle, time, until } from '../format'
+import { code, dayNumber, dayTitle, shortDay, time, until } from '../format'
+import { openExternal } from '../max'
 
 // when — «07:30 · через 6 ч» или просто «завтра, 1 октября в 20:30».
 function when(iso: string): string {
@@ -22,6 +23,7 @@ export function MyScreen() {
   const nav = useNav()
   const [items, setItems] = useState<Booking[] | null>(null)
   const [error, setError] = useState<{ text: string; auth: boolean } | null>(null)
+  const [passes, setPasses] = useState<UserPass[]>([])
 
   const load = () => {
     setError(null)
@@ -29,6 +31,27 @@ export function MyScreen() {
       .me()
       .then((r) => setItems(r.bookings))
       .catch((e) => setError({ text: e.message, auth: e instanceof ApiError && e.status === 401 }))
+    api.myPasses().then((r) => setPasses(r.passes)).catch(() => setPasses([]))
+  }
+
+  async function payPass(up: UserPass) {
+    try {
+      const p = await api.payPass(up.id)
+      if (p.confirmation_url) openExternal(p.confirmation_url)
+      nav.push({ name: 'payment', id: p.id })
+    } catch (e) {
+      nav.toast(e instanceof Error ? e.message : 'Не получилось начать оплату')
+    }
+  }
+
+  async function cancelPass(up: UserPass) {
+    try {
+      await api.cancelPassRequest(up.id)
+      nav.toast('Заявка отменена')
+      load()
+    } catch (e) {
+      nav.toast(e instanceof Error ? e.message : 'Не получилось отменить')
+    }
   }
   useEffect(load, [])
 
@@ -63,12 +86,39 @@ export function MyScreen() {
               <div className="booking__when">{when(b.slot.start_at)}</div>
               <div className="booking__title">{b.slot.title}</div>
               <div className="meta"><MapPin size={13} /><span>{b.venue.name}</span></div>
-              <span className="badge badge--mint">Код {code(b.checkin_code)}</span>
+              <span className="badge badge--mint">{b.is_guest ? 'Место для друга · ' : ''}Код {code(b.checkin_code)}</span>
             </div>
             <ChevronRight className="booking__chevron" size={20} />
           </article>
         )
       })}
+      {passes.length > 0 && (
+        <>
+          <h2 className="h2 section">Абонементы</h2>
+          <div className="list">
+            {passes.map((up) => (
+              <div key={up.id} className="list__row list__row--static">
+                <div className="list__main">
+                  <div className="list__title">{up.title}</div>
+                  <div className="muted small">
+                    {up.venue_name} · {up.status === 'active'
+                      ? `осталось ${up.visits_left} из ${up.visits_total}, до ${up.valid_until ? shortDay(up.valid_until) : '—'}`
+                      : `заявка на ${up.price.toLocaleString('ru-RU')} ₽ — оплата в студии или онлайн`}
+                  </div>
+                </div>
+                {up.status === 'requested' ? (
+                  <div className="row">
+                    <Btn onClick={() => payPass(up)}>Оплатить</Btn>
+                    <Btn variant="ghost" onClick={() => cancelPass(up)}>Отменить</Btn>
+                  </div>
+                ) : (
+                  <span className="status status--attended">Активен</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
       {past.length > 0 && <h2 className="h2 section">История</h2>}
       {past.length > 0 && (
         <div className="list">

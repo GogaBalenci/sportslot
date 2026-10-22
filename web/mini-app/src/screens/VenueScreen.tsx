@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Globe, MapPin, MessageCircle, Navigation, Phone } from 'lucide-react'
-import { api, type Booking, type SlotInfo, type VenueDetails } from '../api'
-import { AccessBadge, BookingSheet, Btn, Empty, ErrorBlock, Loader, SlotPill, SportBadge, districtTitle } from '../components'
+import { api, type Booking, type Pass, type ReviewSummary, type SlotInfo, type VenueDetails } from '../api'
+import { AccessBadge, BookingSheet, Btn, Empty, ErrorBlock, Loader, SlotPill, SportBadge, Stars, districtTitle } from '../components'
 import { catalogDate, dayKey, dayNumber, dayTitle, hours, nextDays, routeUrl, trial } from '../format'
 import { haptic, openExternal } from '../max'
 import { useNav } from '../nav'
@@ -59,6 +59,7 @@ export function VenueScreen({ id, reschedule }: { id: string; reschedule?: strin
           <AccessBadge venue={venue} />
         </div>
         <h1 className="h1">{venue.name}</h1>
+        {venue.reviews && venue.reviews.count > 0 && <Stars average={venue.reviews.average} count={venue.reviews.count} />}
         {place && <div className="meta"><MapPin size={14} /><span>{place}</span></div>}
         <div className="row row--wrap">
           <Btn variant="secondary" icon={<Navigation size={18} />} onClick={() => openExternal(routeUrl(venue.lat, venue.lon, nav.origin))}>Маршрут</Btn>
@@ -82,7 +83,7 @@ export function VenueScreen({ id, reschedule }: { id: string; reschedule?: strin
         <>
           {(trial(venue.trial_price) || venue.what_to_bring) && (
             <div className="info-card">
-              {trial(venue.trial_price) && <div className="trial">{trial(venue.trial_price)}</div>}
+              {trial(venue.trial_price) && <div className="trial">{trial(venue.trial_price)}{venue.online_payment?.trial ? ' · можно оплатить онлайн' : ''}</div>}
               {venue.what_to_bring && <p className="muted">Что взять: {venue.what_to_bring}</p>}
             </div>
           )}
@@ -125,6 +126,8 @@ export function VenueScreen({ id, reschedule }: { id: string; reschedule?: strin
               </div>
             </>
           )}
+          {venue.passes && venue.passes.length > 0 && <PassesSection venue={venue} />}
+          {venue.reviews && venue.reviews.count > 0 && <ReviewsSection reviews={venue.reviews} />}
           {venue.description && <p className="muted small">{venue.description}</p>}
         </>
       ) : (
@@ -138,5 +141,67 @@ export function VenueScreen({ id, reschedule }: { id: string; reschedule?: strin
 
       {picked && <BookingSheet venue={venue} slot={picked} reschedule={reschedule} onClose={() => setPicked(null)} />}
     </div>
+  )
+}
+
+const visitsLabel = (n: number) =>
+  `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'занятие' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'занятия' : 'занятий'}`
+
+// Абонементы студии: онлайн-оплата, если подключена, иначе заявка с оплатой на месте.
+function PassesSection({ venue }: { venue: VenueDetails }) {
+  const nav = useNav()
+  const [busy, setBusy] = useState('')
+  const online = venue.online_payment?.passes
+  async function buy(p: Pass) {
+    setBusy(p.id)
+    try {
+      const r = await api.buyPass(p.id)
+      if (r.payment?.confirmation_url) {
+        openExternal(r.payment.confirmation_url)
+        nav.push({ name: 'payment', id: r.payment.id })
+      } else if (r.payment_error) {
+        nav.toast('Платёжная система не ответила. Заявка сохранена — оплатить можно позже в «Моих занятиях»')
+      } else {
+        haptic('success')
+        nav.toast('Заявка отправлена студии. Оплатите на месте — студия включит абонемент')
+      }
+    } catch (e) {
+      nav.toast(e instanceof Error ? e.message : 'Не получилось оформить абонемент')
+    } finally {
+      setBusy('')
+    }
+  }
+  return (
+    <>
+      <h2 className="h2 section">Абонементы</h2>
+      <div className="stack">
+        {venue.passes!.map((p) => (
+          <div key={p.id} className="pass-card">
+            <div className="pass-card__main">
+              <b>{p.title}</b>
+              <span className="muted small">{visitsLabel(p.visits)} · действует {p.valid_days} дн.</span>
+            </div>
+            <Btn loading={busy === p.id} onClick={() => buy(p)}>{p.price.toLocaleString('ru-RU')} ₽</Btn>
+          </div>
+        ))}
+      </div>
+      <p className="muted small">{online ? 'Оплата картой или через СБП на странице студии. Визиты списываются при записи, при отмене возвращаются.' : 'Оплата на месте: студия получит заявку и включит абонемент после оплаты.'}</p>
+    </>
+  )
+}
+
+function ReviewsSection({ reviews }: { reviews: ReviewSummary }) {
+  return (
+    <>
+      <h2 className="h2 section">Отзывы <Stars average={reviews.average} count={reviews.count} /></h2>
+      <div className="stack">
+        {reviews.items?.filter((r) => r.text).slice(0, 5).map((r, i) => (
+          <div key={i} className="review-card">
+            <div className="review-card__head"><b>{r.author}</b><span className="review-card__stars">{'★'.repeat(r.rating)}</span></div>
+            <p>{r.text}</p>
+          </div>
+        ))}
+      </div>
+    </>
   )
 }

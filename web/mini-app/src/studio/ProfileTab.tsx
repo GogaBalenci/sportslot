@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { api, type Venue } from '../api'
-import { Btn } from '../components'
+import { useEffect, useState } from 'react'
+import { api, type StudioSettings, type Venue } from '../api'
+import { Btn, Toggle } from '../components'
 import { useNav } from '../nav'
 
 // Профиль студии — то, что видят клиенты в карточке и в сообщениях об отмене.
@@ -12,6 +12,19 @@ export function ProfileTab({ venue, readOnly, onSaved }: { venue: Venue; readOnl
   const [price, setPrice] = useState(venue.trial_price === undefined || venue.trial_price === null ? '' : String(venue.trial_price))
   const [description, setDescription] = useState(venue.description ?? '')
   const [busy, setBusy] = useState(false)
+  const [settings, setSettings] = useState<StudioSettings | null>(null)
+  useEffect(() => {
+    api.studioSettings(venue.id).then(setSettings).catch(() => setSettings(null))
+  }, [venue.id])
+
+  async function toggle(key: 'show_reviews' | 'daily_digest', value: boolean) {
+    try {
+      setSettings(await api.saveStudioSettings(venue.id, { [key]: value }))
+      nav.toast(key === 'show_reviews' ? (value ? 'Оценки и отзывы видны в карточке' : 'Отзывы скрыты из карточки') : value ? 'Сводка будет приходить в 9:00' : 'Сводка выключена')
+    } catch (e) {
+      nav.toast(e instanceof Error ? e.message : 'Не получилось сохранить')
+    }
+  }
 
   async function save() {
     setBusy(true)
@@ -42,6 +55,14 @@ export function ProfileTab({ venue, readOnly, onSaved }: { venue: Venue; readOnl
       <label className="field"><span>О студии</span>
         <textarea className="input textarea" disabled={readOnly} value={description} onChange={(e) => setDescription(e.target.value)} rows={3} /></label>
       {!readOnly && <Btn size="lg" block loading={busy} onClick={save}>Сохранить</Btn>}
+      {settings && (
+        <>
+          <Toggle checked={settings.show_reviews} disabled={readOnly} onChange={(v) => toggle('show_reviews', v)}
+            label="Показывать оценки и отзывы" hint="Средняя оценка и последние отзывы клиентов появятся в карточке студии и в поиске" />
+          <Toggle checked={settings.daily_digest} disabled={readOnly} onChange={(v) => toggle('daily_digest', v)}
+            label="Утренняя сводка в 9:00" hint="Записи на сегодня, сообщения без ответа, заявки и оплаты — одним сообщением в бот" />
+        </>
+      )}
     </section>
   )
 }

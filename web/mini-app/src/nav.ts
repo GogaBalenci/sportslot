@@ -15,6 +15,8 @@ export type Route =
   | { name: 'invite'; token: string }
   | { name: 'geo' }
   | { name: 'chat'; venueId: string; venueName: string }
+  | { name: 'friend'; token: string }
+  | { name: 'payment'; id: string }
   | { name: 'venue'; id: string; reschedule?: string }
   | { name: 'ticket'; id: string; fresh?: boolean }
 
@@ -57,7 +59,12 @@ export function routeFromStart(param: string): Route {
     case 'partner':
       return { name: 'studio' }
     case 'studio':
-      return /^[0-9a-f]{32}$/.test(value) ? { name: 'invite', token: value } : { name: 'studio' }
+      if (/^[0-9a-f]{32}$/.test(value)) return { name: 'invite', token: value }
+      return value ? { name: 'studio', tab: value } : { name: 'studio' }
+    case 'friend':
+      return /^[0-9a-f]{32}$/.test(value) ? { name: 'friend', token: value } : { name: 'my' }
+    case 'pay':
+      return value ? { name: 'payment', id: value } : { name: 'my' }
     case 'sb':
       return value ? { name: 'studioBooking', id: value } : { name: 'studio' }
     case 'sm':

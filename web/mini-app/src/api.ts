@@ -31,6 +31,7 @@ export type SlotInfo = {
   end_at: string
   quota_total: number
   quota_available: number
+  repeats?: boolean
 }
 
 export type TravelMode = 'walking' | 'transit' | 'driving'
@@ -80,6 +81,8 @@ export type ClientCard = {
 export type Thread = { user_id: string; user_name: string; last_text: string; last_at: string; last_by: string; unread: number }
 
 export type StudioStats = {
+  response: { answered: number; median_minutes: number; within_hour: number; waiting: number }
+  paid: { count: number; amount: number }
   since: string
   bookings: number
   attended: number
@@ -109,9 +112,86 @@ export type VenueCard = {
   beyond_limit?: boolean
   slots: SlotInfo[]
   available_slots: number
+  rating?: ReviewSummary
 }
 
-export type VenueDetails = Venue & { venue_id: string; all_slots: SlotInfo[] }
+export type Review = { rating: number; text?: string; author: string; date: string }
+export type ReviewSummary = { average: number; count: number; items?: Review[] }
+
+export type Pass = { id: string; venue_id: string; title: string; visits: number; valid_days: number; price: number; active: boolean }
+
+export type UserPass = {
+  id: string
+  pass_id?: string
+  venue_id: string
+  title: string
+  visits_total: number
+  visits_left: number
+  valid_days: number
+  price: number
+  status: 'requested' | 'active' | 'used' | 'expired' | 'cancelled'
+  paid_by?: 'online' | 'studio'
+  valid_until?: string
+  created_at: string
+  venue_name?: string
+  user_name?: string
+}
+
+export type Payment = {
+  id: string
+  venue_id: string
+  kind: 'trial' | 'pass'
+  booking_id?: string
+  user_pass_id?: string
+  amount: number
+  description: string
+  status: 'pending' | 'succeeded' | 'canceled'
+  confirmation_url?: string
+  created_at: string
+  paid_at?: string
+  user_name?: string
+}
+
+export type FriendPlace = { booking: Booking; link?: string; claimed: boolean; friend_name?: string }
+
+export type SeriesResult = { bookings: Booking[]; skipped: string[] }
+
+export type BookResult = Booking & { series?: SeriesResult; friend?: FriendPlace; friend_error?: string }
+
+export type StudioSettings = {
+  venue_id: string
+  show_reviews: boolean
+  daily_digest: boolean
+  payment_provider: '' | 'yookassa' | 'tbank'
+  payment_account: string
+  payment_secret_hint: string
+  payments_enabled: boolean
+  trial_online: boolean
+  secret_saved: boolean
+  encryption_ready: boolean
+  yookassa_webhook: string
+  tbank_webhook: string
+}
+
+export type SettingsInput = Partial<{
+  show_reviews: boolean
+  daily_digest: boolean
+  payment_provider: string
+  payment_account: string
+  payment_secret: string
+  payments_enabled: boolean
+  trial_online: boolean
+}>
+
+export type StudioCommerce = { passes: Pass[]; user_passes: UserPass[]; payments: Payment[]; month: { count: number; amount: number } }
+
+export type VenueDetails = Venue & {
+  venue_id: string
+  all_slots: SlotInfo[]
+  reviews?: ReviewSummary
+  passes?: Pass[]
+  online_payment?: { trial: boolean; passes: boolean }
+}
 
 export type Booking = {
   id: string
@@ -121,6 +201,11 @@ export type Booking = {
   status: 'confirmed' | 'cancelled' | 'attended' | 'no_show'
   checkin_code: string
   rating?: number
+  review?: string
+  is_guest?: boolean
+  host_booking_id?: string
+  user_pass_id?: string
+  paid_at?: string
   user_name?: string
   slot: { id: string; title: string; sport_type: string; start_at: string; end_at: string }
   venue: Venue
@@ -207,12 +292,29 @@ export const api = {
   me: () =>
     user<{ user: { id: string; name: string }; bookings: Booking[]; last_location?: LastLocation }>('GET', '/me'),
   geocode: (q: string) => request<{ lat: number; lon: number; address: string }>('GET', `/geocode?q=${encodeURIComponent(q)}`),
-  book: (slotId: string) => user<Booking>('POST', '/bookings', { slot_id: slotId, source_channel: 'miniapp' }),
+  book: (slotId: string, opts: { weeks?: number; withFriend?: boolean } = {}) =>
+    user<BookResult>('POST', '/bookings', {
+      slot_id: slotId,
+      source_channel: 'miniapp',
+      weeks: opts.weeks && opts.weeks > 1 ? opts.weeks : undefined,
+      with_friend: opts.withFriend || undefined,
+    }),
   booking: (id: string) => user<Booking>('GET', `/bookings/${id}`),
   cancel: (id: string) => user<void>('POST', `/bookings/${id}/cancel`),
   reschedule: (id: string, slotId: string) => user<Booking>('PATCH', `/bookings/${id}/reschedule`, { new_slot_id: slotId }),
   waitlist: (slotId: string) => user<{ position: number }>('POST', '/waitlist', { slot_id: slotId }),
   feedback: (id: string, rating: number) => user<void>('POST', `/bookings/${id}/feedback`, { rating }),
+  review: (id: string, text: string) => user<void>('POST', `/bookings/${id}/review`, { text }),
+  friend: (id: string) => user<{ friend: FriendPlace | null }>('GET', `/bookings/${id}/friend`),
+  addFriend: (id: string) => user<FriendPlace>('POST', `/bookings/${id}/friend`),
+  claimFriend: (token: string) => user<Booking>('POST', '/friends/claim', { token }),
+  payBooking: (id: string) => user<Payment>('POST', `/bookings/${id}/pay`),
+  payment: (id: string) => user<Payment>('GET', `/payments/${id}`),
+  myPasses: () => user<{ passes: UserPass[] }>('GET', '/me/passes'),
+  buyPass: (passId: string) =>
+    user<{ user_pass: UserPass; payment?: Payment; payment_error?: boolean }>('POST', `/passes/${passId}/buy`),
+  payPass: (id: string) => user<Payment>('POST', `/me/passes/${id}/pay`),
+  cancelPassRequest: (id: string) => user<void>('POST', `/me/passes/${id}/cancel`),
 
   partnerLogin: (code: string) => request<{ token: string }>('POST', '/partner/login', { code }),
 
@@ -247,6 +349,15 @@ export const api = {
   reply: (venueId: string, userId: string, text: string) =>
     studio<Message>('POST', `/studio/${venueId}/threads/${userId}`, { text }),
   messageRef: (id: string) => studio<{ venue_id: string; user_id: string }>('GET', `/studio/messages/${id}`),
+  studioSettings: (venueId: string) => studio<StudioSettings>('GET', `/studio/${venueId}/settings`),
+  saveStudioSettings: (venueId: string, input: SettingsInput) => studio<StudioSettings>('PATCH', `/studio/${venueId}/settings`, input),
+  checkPayments: (venueId: string) => studio<{ ok: boolean }>('POST', `/studio/${venueId}/settings/check`),
+  studioCommerce: (venueId: string) => studio<StudioCommerce>('GET', `/studio/${venueId}/commerce`),
+  savePass: (venueId: string, p: Partial<Pass>) =>
+    p.id ? studio<Pass>('PUT', `/studio/${venueId}/passes/${p.id}`, p) : studio<Pass>('POST', `/studio/${venueId}/passes`, p),
+  confirmPass: (venueId: string, id: string) => studio<UserPass>('POST', `/studio/${venueId}/user-passes/${id}/confirm`),
+  declinePass: (venueId: string, id: string) => studio<void>('POST', `/studio/${venueId}/user-passes/${id}/decline`),
+  studioReviews: (venueId: string) => studio<ReviewSummary>('GET', `/studio/${venueId}/reviews`),
 
   platformStudios: () => studio<{ studios: PlatformStudio[] }>('GET', '/platform/studios'),
   platformCatalog: (q: string) => studio<{ venues: Venue[] }>('GET', `/platform/catalog?q=${encodeURIComponent(q)}`),

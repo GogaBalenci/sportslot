@@ -331,3 +331,36 @@ img { max-width: 100%; }
 .bubble--mine small { color: rgba(255, 255, 255, 0.7); }
 .chat__input { position: sticky; bottom: 0; display: flex; gap: 8px; align-items: flex-end; background: var(--color-bg-main); padding: 8px 0 calc(8px + env(safe-area-inset-bottom)); }
 .chat__textarea { height: auto; min-height: 44px; max-height: 140px; padding: 10px 14px; resize: none; font: inherit; }
+
+/* Переключатель настройки */
+.toggle { display: flex; align-items: flex-start; gap: 12px; cursor: pointer; padding: 6px 0; }
+.toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.toggle__track { flex: none; width: 44px; height: 26px; border-radius: 9999px; background: var(--color-border); position: relative; transition: background 0.2s; margin-top: 1px; }
+.toggle__thumb { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: var(--shadow-sm); transition: transform 0.2s; }
+.toggle input:checked + .toggle__track { background: var(--color-primary); }
+.toggle input:checked + .toggle__track .toggle__thumb { transform: translateX(18px); }
+.toggle input:focus-visible + .toggle__track { outline: 2px solid var(--color-secondary); outline-offset: 2px; }
+.toggle__text { display: flex; flex-direction: column; gap: 2px; font-size: 15px; font-weight: 500; }
+.toggle__text small { font-size: 13px; font-weight: 400; color: var(--color-text-muted); }
+.toggle--disabled { opacity: 0.55; cursor: default; }
+
+/* Оценка, отзывы */
+.stars { display: inline-flex; align-items: baseline; gap: 4px; font: 600 14px/1 var(--font-sans); color: var(--color-warning-dark); }
+.stars small { font-weight: 500; color: var(--color-text-muted); }
+.h2 .stars { margin-left: 8px; font-size: 15px; }
+.review-card { background: var(--color-bg-surface); border-radius: var(--radius-lg); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.review-card p { margin: 0; font-size: 14px; }
+.review-card__head { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+.review-card__stars { color: var(--color-warning); letter-spacing: 1px; }
+.review-form { display: flex; flex-direction: column; gap: 8px; }
+.review .list__title { color: var(--color-warning-dark); }
+
+/* Опции записи и абонементы */
+.booking-options { display: flex; flex-direction: column; gap: 10px; background: var(--color-bg-surface); border-radius: var(--radius-lg); padding: 12px 14px; }
+.note--mint { color: var(--color-success-dark); background: var(--color-success-light); }
+.pass-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 12px 14px; background: var(--color-bg-main); }
+.pass-card__main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.friend-card .row { flex-wrap: wrap; }
+.payment-state { align-items: center; text-align: center; color: var(--color-secondary); }
+.payment-state .muted { color: var(--color-text-muted); }
+.ticket .badge { align-self: center; margin-top: 6px; }

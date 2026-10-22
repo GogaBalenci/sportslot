@@ -1,6 +1,6 @@
-import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
+import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { Bus, Calendar, Car, Check, Clock, Footprints, MapPin, Navigation, QrCode, Zap } from 'lucide-react'
-import { ApiError, api, type Booking, type SlotInfo, type Travel, type TravelMode, type Venue, type VenueCard } from './api'
+import { ApiError, api, type Booking, type SlotInfo, type UserPass, type Travel, type TravelMode, type Venue, type VenueCard } from './api'
 import { dayTitle, distance, routeUrl, seats, shortDay, time, travelLabel, trial, until } from './format'
 import { haptic, openExternal } from './max'
 import { useNav } from './nav'
@@ -126,6 +126,7 @@ export function VenueCardView({ card, sport, onSlot }: { card: VenueCard; sport?
         <AccessBadge venue={v} />
       </div>
       <h3 className="card__title">{v.name}</h3>
+      {card.rating && card.rating.count > 0 && <Stars average={card.rating.average} count={card.rating.count} />}
       {card.travel && <TravelBadge travel={card.travel} />}
       <div className="meta">
         <MapPin size={14} />
@@ -166,18 +167,41 @@ export function BookingSheet(props: { venue: Venue; slot: SlotInfo; reschedule?:
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [full, setFull] = useState(slot.quota_available === 0)
+  const [withFriend, setWithFriend] = useState(false)
+  const [weeks, setWeeks] = useState('1')
+  const [pass, setPass] = useState<UserPass | null>(null)
+
+  useEffect(() => {
+    if (props.reschedule) return
+    api
+      .myPasses()
+      .then((r) => setPass(r.passes.find((p) => p.venue_id === venue.id && p.status === 'active' && p.visits_left > 0) ?? null))
+      .catch(() => setPass(null))
+  }, [venue.id, props.reschedule])
 
   async function confirm() {
     setBusy(true)
     setError('')
     try {
-      const booking: Booking = props.reschedule
-        ? await api.reschedule(props.reschedule, slot.slot_id)
-        : await api.book(slot.slot_id)
+      if (props.reschedule) {
+        const booking = await api.reschedule(props.reschedule, slot.slot_id)
+        haptic('success')
+        props.onClose()
+        nav.push({ name: 'ticket', id: booking.id })
+        nav.toast('Запись перенесена, код входа прежний')
+        return
+      }
+      const r = await api.book(slot.slot_id, { weeks: Number(weeks), withFriend })
       haptic('success')
       props.onClose()
-      nav.push({ name: 'ticket', id: booking.id, fresh: !props.reschedule })
-      if (props.reschedule) nav.toast('Запись перенесена, код входа прежний')
+      nav.push({ name: 'ticket', id: r.id, fresh: true })
+      const notes: string[] = []
+      if (r.series) {
+        notes.push(`Записали на ${r.series.bookings.length} ${r.series.bookings.length === 1 ? 'занятие' : 'занятия'}`)
+        if (r.series.skipped.length) notes.push(`на ${r.series.skipped.map((d) => shortDay(d)).join(', ')} мест нет`)
+      }
+      if (r.friend_error) notes.push(r.friend_error)
+      if (notes.length) nav.toast(notes.join('; '))
     } catch (e) {
       haptic('error')
       if (e instanceof ApiError && e.code === 'quota_exceeded') setFull(true)
@@ -216,6 +240,28 @@ export function BookingSheet(props: { venue: Venue; slot: SlotInfo; reschedule?:
         <div className="note note--warning">Мест нет. Встань в очередь — если кто-то отменит запись, место достанется тебе автоматически.</div>
       ) : (
         <div className="note">{seats(slot.quota_available)} из {slot.quota_total}. Напомним в чате за сутки и за 2 часа.</div>
+      )}
+      {!full && !props.reschedule && (slot.repeats || slot.quota_available >= 2) && (
+        <div className="booking-options">
+          {slot.repeats && (
+            <div className="field">
+              <span>Записаться сразу на несколько недель</span>
+              <Chips
+                items={[{ id: '1', title: 'Только это' }, { id: '2', title: '2 недели' }, { id: '3', title: '3 недели' }, { id: '4', title: '4 недели' }]}
+                value={weeks}
+                onChange={setWeeks}
+                tone="navy"
+              />
+            </div>
+          )}
+          {slot.quota_available >= 2 && (
+            <Toggle checked={withFriend} onChange={setWithFriend} label="Пойду с другом"
+              hint="Забронируем второе место. Отправишь другу ссылку — он получит свой QR-пропуск" />
+          )}
+        </div>
+      )}
+      {pass && !props.reschedule && (
+        <div className="note note--mint">🎟 Занятие спишется из абонемента «{pass.title}»: осталось {pass.visits_left} из {pass.visits_total}</div>
       )}
       {error && <div className="error">{error}</div>}
       <div className="stack">
@@ -276,5 +322,28 @@ export function Empty({ title, text, action }: { title: string; text?: string; a
       {text && <div>{text}</div>}
       {action}
     </div>
+  )
+}
+
+// Toggle — переключатель-настройка с пояснением.
+export function Toggle(props: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string; disabled?: boolean }) {
+  return (
+    <label className={`toggle${props.disabled ? ' toggle--disabled' : ''}`}>
+      <input type="checkbox" checked={props.checked} disabled={props.disabled} onChange={(e) => props.onChange(e.target.checked)} />
+      <span className="toggle__track"><span className="toggle__thumb" /></span>
+      <span className="toggle__text">
+        <span>{props.label}</span>
+        {props.hint && <small>{props.hint}</small>}
+      </span>
+    </label>
+  )
+}
+
+// Stars — средняя оценка звёздочкой: «★ 4,8 · 12».
+export function Stars({ average, count }: { average: number; count: number }) {
+  return (
+    <span className="stars" aria-label={`Оценка ${average.toFixed(1)} из 5, ${count}`}>
+      ★ {average.toFixed(1).replace('.', ',')} <small>· {count}</small>
+    </span>
   )
 }
