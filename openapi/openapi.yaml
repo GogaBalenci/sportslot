@@ -26,6 +26,8 @@ tags:
   - name: catalog
   - name: bookings
   - name: partner
+  - name: payments
+    description: Абонементы и онлайн-оплата через магазин студии (ЮKassa, Т-Касса)
   - name: studio
     description: Кабинет студии — администратор по подписи MAX, демо-доступ по токену partner
   - name: platform
@@ -246,6 +248,8 @@ paths:
               properties:
                 slot_id: { type: string, format: uuid, example: b1111111-0000-0000-0000-000000000001 }
                 source_channel: { type: string, enum: [bot, miniapp], default: miniapp }
+                weeks: { type: integer, minimum: 1, maximum: 4, description: "Записаться и на то же время в следующие недели; в ответе — series {bookings, skipped}" }
+                with_friend: { type: boolean, description: "Сразу второе место для друга; в ответе — friend (FriendPlace)" }
       responses:
         "201":
           description: Запись создана
@@ -338,6 +342,7 @@ paths:
               required: [rating]
               properties:
                 rating: { type: integer, minimum: 1, maximum: 5 }
+                review: { type: string, maxLength: 500, description: "Необязательный отзыв; виден в карточке, если студия включила показ" }
       responses:
         "204": { description: Оценка сохранена }
         "400": { $ref: "#/components/responses/BadRequest" }
@@ -805,6 +810,239 @@ paths:
         - { name: max_user_id, in: path, required: true, schema: { type: string } }
       responses:
         "204": { description: Доступ отозван }
+  /api/v1/bookings/{id}/review:
+    post:
+      tags: [bookings]
+      summary: Отзыв к оценённому посещению (до 500 символов)
+      security: [{ initData: [] }, { testUser: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [text], properties: { text: { type: string, maxLength: 500 } } }
+      responses:
+        "204": { description: Отзыв сохранён }
+        "409": { description: Посещение не отмечено или не оценено }
+  /api/v1/bookings/{id}/friend:
+    get:
+      tags: [bookings]
+      summary: Место для друга при записи пригласившего
+      security: [{ initData: [] }, { testUser: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: "{friend: FriendPlace | null}"
+    post:
+      tags: [bookings]
+      summary: Забронировать второе место на то же занятие и получить ссылку для друга
+      security: [{ initData: [] }, { testUser: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Место для друга (повторный вызов возвращает то же место)
+          content: { application/json: { schema: { $ref: "#/components/schemas/FriendPlace" } } }
+        "409": { description: Свободных мест нет }
+  /api/v1/friends/claim:
+    post:
+      tags: [bookings]
+      summary: Друг принимает место по ссылке friend_<token> — получает свой код входа и напоминания
+      security: [{ initData: [] }, { testUser: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [token], properties: { token: { type: string } } }
+      responses:
+        "200":
+          description: Запись друга
+          content: { application/json: { schema: { $ref: "#/components/schemas/BookingView" } } }
+        "404": { description: Приглашение уже принято или запись отменена }
+        "409": { description: Это собственная ссылка или друг уже записан на это занятие }
+  /api/v1/bookings/{id}/pay:
+    post:
+      tags: [payments]
+      summary: Оплатить пробное занятие онлайн в магазине студии
+      security: [{ initData: [] }, { testUser: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Платёж со ссылкой на страницу оплаты (недавний неоплаченный переиспользуется)
+          content: { application/json: { schema: { $ref: "#/components/schemas/Payment" } } }
+        "409": { description: "payments_off — студия не принимает оплату онлайн; nothing_to_pay — уже оплачено, бесплатно или по абонементу" }
+        "502": { description: Платёжная система не приняла запрос }
+  /api/v1/payments/{id}:
+    get:
+      tags: [payments]
+      summary: Статус своего платежа; неоплаченный перепроверяется у платёжной системы
+      security: [{ initData: [] }, { testUser: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Платёж
+          content: { application/json: { schema: { $ref: "#/components/schemas/Payment" } } }
+  /api/v1/me/passes:
+    get:
+      tags: [payments]
+      summary: Абонементы пользователя (действующие и заявки)
+      security: [{ initData: [] }, { testUser: [] }]
+      responses:
+        "200":
+          description: "{passes: UserPass[]}"
+  /api/v1/passes/{id}/buy:
+    post:
+      tags: [payments]
+      summary: Купить абонемент — онлайн-платёж, если студия принимает оплату, иначе заявка с оплатой на месте
+      security: [{ initData: [] }, { testUser: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: "{user_pass, payment?, payment_error}"
+  /api/v1/me/passes/{id}/pay:
+    post:
+      tags: [payments]
+      summary: Оплатить заявку на абонемент онлайн
+      security: [{ initData: [] }, { testUser: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Платёж
+          content: { application/json: { schema: { $ref: "#/components/schemas/Payment" } } }
+  /api/v1/me/passes/{id}/cancel:
+    post:
+      tags: [payments]
+      summary: Отменить неоплаченную заявку на абонемент
+      security: [{ initData: [] }, { testUser: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "204": { description: Заявка отменена }
+  /api/v1/payments/yookassa/{venue_id}:
+    post:
+      tags: [payments]
+      summary: Уведомление ЮKassa. Статус перепроверяется запросом к API ЮKassa с ключом магазина студии
+      parameters: [{ $ref: "#/components/parameters/VenueId" }]
+      requestBody:
+        content: { application/json: { schema: { type: object } } }
+      responses:
+        "200": { description: Принято (в том числе неизвестный платёж) }
+        "500": { description: Временная ошибка — ЮKassa повторит уведомление }
+  /api/v1/payments/tbank/{venue_id}:
+    post:
+      tags: [payments]
+      summary: Уведомление Т-Кассы с подписью Token (пароль терминала студии)
+      parameters: [{ $ref: "#/components/parameters/VenueId" }]
+      requestBody:
+        content: { application/json: { schema: { type: object } } }
+      responses:
+        "200": { description: "Тело ответа — OK" }
+        "403": { description: Подпись не совпала }
+  /api/v1/studio/{venue_id}/settings:
+    get:
+      tags: [studio]
+      summary: Настройки студии — отзывы, утренняя сводка, онлайн-оплата (без секретного ключа)
+      security: [{ initData: [] }, { partner: [] }]
+      parameters: [{ $ref: "#/components/parameters/VenueId" }]
+      responses:
+        "200":
+          description: Настройки и адреса уведомлений
+          content: { application/json: { schema: { $ref: "#/components/schemas/StudioSettings" } } }
+    patch:
+      tags: [studio]
+      summary: Изменить настройки; ключ магазина шифруется и больше не отдаётся
+      security: [{ initData: [] }]
+      parameters: [{ $ref: "#/components/parameters/VenueId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                show_reviews: { type: boolean }
+                daily_digest: { type: boolean }
+                payment_provider: { type: string, enum: ["", yookassa, tbank] }
+                payment_account: { type: string, description: "shopId ЮKassa или TerminalKey Т-Кассы" }
+                payment_secret: { type: string, writeOnly: true }
+                payments_enabled: { type: boolean }
+                trial_online: { type: boolean }
+      responses:
+        "200":
+          description: Сохранённые настройки
+          content: { application/json: { schema: { $ref: "#/components/schemas/StudioSettings" } } }
+        "400": { description: Включение оплаты без платёжной системы, магазина или ключа }
+        "503": { description: На сервере не задан PAYMENT_SECRET_KEY }
+  /api/v1/studio/{venue_id}/settings/check:
+    post:
+      tags: [studio]
+      summary: Проверить ключи магазина ЮKassa (GET /v3/me)
+      security: [{ initData: [] }, { partner: [] }]
+      parameters: [{ $ref: "#/components/parameters/VenueId" }]
+      responses:
+        "200": { description: "{ok: true}" }
+        "502": { description: Платёжная система не приняла ключи }
+  /api/v1/studio/{venue_id}/commerce:
+    get:
+      tags: [studio]
+      summary: Абонементы студии, заявки и абонементы клиентов, оплаты за 30 дней
+      security: [{ initData: [] }, { partner: [] }]
+      parameters: [{ $ref: "#/components/parameters/VenueId" }]
+      responses:
+        "200": { description: "{passes, user_passes, payments, month: {count, amount}}" }
+  /api/v1/studio/{venue_id}/passes:
+    post:
+      tags: [studio]
+      summary: Добавить абонемент
+      security: [{ initData: [] }, { partner: [] }]
+      parameters: [{ $ref: "#/components/parameters/VenueId" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/Pass" } } }
+      responses:
+        "200":
+          description: Абонемент
+          content: { application/json: { schema: { $ref: "#/components/schemas/Pass" } } }
+  /api/v1/studio/{venue_id}/passes/{pass_id}:
+    put:
+      tags: [studio]
+      summary: Изменить абонемент или снять с продажи (active=false)
+      security: [{ initData: [] }, { partner: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/VenueId" }
+        - { name: pass_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/Pass" } } }
+      responses:
+        "200": { description: Абонемент }
+  /api/v1/studio/{venue_id}/user-passes/{user_pass_id}/confirm:
+    post:
+      tags: [studio]
+      summary: Студия получила оплату на месте — включить абонемент клиента
+      security: [{ initData: [] }, { partner: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/VenueId" }
+        - { name: user_pass_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: Абонемент активен, клиенту отправлено сообщение }
+        "409": { description: Заявка уже обработана }
+  /api/v1/studio/{venue_id}/user-passes/{user_pass_id}/decline:
+    post:
+      tags: [studio]
+      summary: Отклонить заявку на абонемент
+      security: [{ initData: [] }, { partner: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/VenueId" }
+        - { name: user_pass_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Заявка отклонена }
+  /api/v1/studio/{venue_id}/reviews:
+    get:
+      tags: [studio]
+      summary: Все оценки и отзывы студии с полными именами
+      security: [{ initData: [] }, { partner: [] }]
+      parameters: [{ $ref: "#/components/parameters/VenueId" }]
+      responses:
+        "200": { description: "{average, count, items: [{rating, text, author, date}]}" }
   /bot/webhook:
     post:
       tags: [system]
@@ -963,6 +1201,11 @@ components:
         created_at: { type: string, format: date-time }
         cancelled_at: { type: string, format: date-time, nullable: true }
         attended_at: { type: string, format: date-time, nullable: true }
+        review: { type: string }
+        is_guest: { type: boolean, description: "Место для друга, которое он ещё не принял" }
+        host_booking_id: { type: string, format: uuid }
+        user_pass_id: { type: string, format: uuid, description: "Занятие списано из абонемента" }
+        paid_at: { type: string, format: date-time, description: "Пробное оплачено онлайн" }
     BookingView:
       allOf:
         - $ref: "#/components/schemas/Booking"
@@ -1023,3 +1266,47 @@ components:
         start_minute: { type: integer, minimum: 0, maximum: 1439, example: 1140 }
         duration_min: { type: integer, minimum: 15, maximum: 300, example: 60 }
         quota: { type: integer, minimum: 1, maximum: 100, example: 4 }
+    Pass:
+      type: object
+      required: [title, visits, valid_days, price]
+      properties:
+        id: { type: string, format: uuid, readOnly: true }
+        title: { type: string, example: "8 занятий" }
+        visits: { type: integer, minimum: 1, maximum: 100 }
+        valid_days: { type: integer, minimum: 1, maximum: 365 }
+        price: { type: integer, minimum: 1, description: рубли }
+        active: { type: boolean }
+    Payment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        venue_id: { type: string, format: uuid }
+        kind: { type: string, enum: [trial, pass] }
+        booking_id: { type: string, format: uuid }
+        user_pass_id: { type: string, format: uuid }
+        amount: { type: integer, description: копейки }
+        description: { type: string }
+        status: { type: string, enum: [pending, succeeded, canceled] }
+        confirmation_url: { type: string, format: uri }
+        paid_at: { type: string, format: date-time }
+    FriendPlace:
+      type: object
+      properties:
+        booking: { $ref: "#/components/schemas/BookingView" }
+        link: { type: string, description: "https://max.ru/<бот>?startapp=friend_<token>, пока друг не принял место" }
+        claimed: { type: boolean }
+        friend_name: { type: string }
+    StudioSettings:
+      type: object
+      properties:
+        show_reviews: { type: boolean }
+        daily_digest: { type: boolean }
+        payment_provider: { type: string, enum: ["", yookassa, tbank] }
+        payment_account: { type: string }
+        payment_secret_hint: { type: string, example: "••3456" }
+        secret_saved: { type: boolean }
+        payments_enabled: { type: boolean }
+        trial_online: { type: boolean }
+        encryption_ready: { type: boolean }
+        yookassa_webhook: { type: string, format: uri }
+        tbank_webhook: { type: string, format: uri }
