@@ -1,6 +1,6 @@
 import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { Bus, Calendar, Car, Check, Clock, Footprints, MapPin, Navigation, QrCode, Zap } from 'lucide-react'
-import { ApiError, api, type Booking, type SlotInfo, type UserPass, type Travel, type TravelMode, type Venue, type VenueCard } from './api'
+import { ApiError, api, assetUrl, type Booking, type SlotInfo, type UserPass, type Travel, type TravelMode, type Venue, type VenueCard } from './api'
 import { dayTitle, distance, routeUrl, seats, shortDay, time, travelLabel, trial, until } from './format'
 import { haptic, openExternal } from './max'
 import { useNav } from './nav'
@@ -125,7 +125,10 @@ export function VenueCardView({ card, sport, onSlot }: { card: VenueCard; sport?
         <SportBadge sport={sport && v.sports.includes(sport) ? sport : v.sport_type} />
         <AccessBadge venue={v} />
       </div>
-      <h3 className="card__title">{v.name}</h3>
+      <div className="card__head">
+        {v.logo_url && <VenueLogo venue={v} size={36} />}
+        <h3 className="card__title">{v.name}</h3>
+      </div>
       {card.rating && card.rating.count > 0 && <Stars average={card.rating.average} count={card.rating.count} />}
       {card.travel && <TravelBadge travel={card.travel} />}
       <div className="meta">
@@ -254,9 +257,9 @@ export function BookingSheet(props: { venue: Venue; slot: SlotInfo; reschedule?:
               />
             </div>
           )}
-          {slot.quota_available >= 2 && (
+          {slot.quota_available >= 2 && new Date(slot.start_at).getTime() - Date.now() > 2 * 3600 * 1000 && (
             <Toggle checked={withFriend} onChange={setWithFriend} label="Пойду с другом"
-              hint="Забронируем второе место. Отправишь другу ссылку — он получит свой QR-пропуск" />
+              hint="Забронируем второе место и дадим ссылку для друга — он получит свой QR-пропуск. Если друг не откроет её за 2 часа до начала, место освободится" />
           )}
         </div>
       )}
@@ -344,6 +347,16 @@ export function Stars({ average, count }: { average: number; count: number }) {
   return (
     <span className="stars" aria-label={`Оценка ${average.toFixed(1)} из 5, ${count}`}>
       ★ {average.toFixed(1).replace('.', ',')} <small>· {count}</small>
+    </span>
+  )
+}
+
+// VenueLogo — логотип студии в круге; без логотипа — первая буква названия.
+export function VenueLogo({ venue, size = 40 }: { venue: { name: string; logo_url?: string }; size?: number }) {
+  const letter = venue.name.replace(/^[^\p{L}\p{N}]+/u, '').charAt(0).toUpperCase() || '•'
+  return (
+    <span className="venue-logo" style={{ width: size, height: size, fontSize: size * 0.42 }} aria-hidden="true">
+      {venue.logo_url ? <img src={assetUrl(venue.logo_url)} alt="" loading="lazy" /> : letter}
     </span>
   )
 }

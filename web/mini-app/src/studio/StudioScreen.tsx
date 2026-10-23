@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Building2, LogOut } from 'lucide-react'
 import { ApiError, api, hasPartnerToken, setPartnerToken, type StudioSummary } from '../api'
-import { Btn, Chips, ErrorBlock, Loader } from '../components'
+import { Btn, Chips, ErrorBlock, Loader, VenueLogo } from '../components'
 import { useNav } from '../nav'
 import { BookingsTab } from './BookingsTab'
 import { HelpTab } from './HelpTab'
@@ -119,7 +119,7 @@ export function StudioScreen({ venueId, tab }: { venueId?: string; tab?: string 
             ))}
           </select>
         ) : (
-          summary && <div className="studio-name">{summary.venue.name}</div>
+          summary && <div className="studio-name"><VenueLogo venue={summary.venue} size={36} />{summary.venue.name}</div>
         )}
         {summary && (
           <div className="muted small">

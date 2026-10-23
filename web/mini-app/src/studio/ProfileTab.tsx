@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, type StudioSettings, type Venue } from '../api'
-import { Btn, Toggle } from '../components'
+import { Btn, Toggle, VenueLogo } from '../components'
 import { useNav } from '../nav'
 
 // Профиль студии — то, что видят клиенты в карточке и в сообщениях об отмене.
@@ -44,6 +44,7 @@ export function ProfileTab({ venue, readOnly, onSaved }: { venue: Venue; readOnl
   return (
     <section className="info-card">
       {readOnly && <div className="note">Демо-студии в демо-доступе только просматриваются.</div>}
+      <LogoField venue={venue} readOnly={readOnly} onSaved={onSaved} />
       <label className="field"><span>Телефон для клиентов</span>
         <input className="input" disabled={readOnly} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+7 863 000-00-00" /></label>
       <label className="field"><span>Сайт или группа</span>
@@ -52,8 +53,10 @@ export function ProfileTab({ venue, readOnly, onSaved }: { venue: Venue; readOnl
         <input className="input" disabled={readOnly} type="number" min={0} value={price} onChange={(e) => setPrice(e.target.value)} /></label>
       <label className="field"><span>Что взять на первое занятие</span>
         <textarea className="input textarea" disabled={readOnly} value={bring} onChange={(e) => setBring(e.target.value)} rows={2} /></label>
-      <label className="field"><span>О студии</span>
-        <textarea className="input textarea" disabled={readOnly} value={description} onChange={(e) => setDescription(e.target.value)} rows={3} /></label>
+      <label className="field"><span>Коротко о студии — показывается под названием</span>
+        <textarea className="input textarea" disabled={readOnly} value={description} maxLength={300} onChange={(e) => setDescription(e.target.value)} rows={3}
+          placeholder="Например: «Хатха-йога для начинающих утром и вечером, коврики есть»" />
+        <small className="muted">{description.length}/300 · одно-два предложения: что за занятия и для кого</small></label>
       {!readOnly && <Btn size="lg" block loading={busy} onClick={save}>Сохранить</Btn>}
       {settings && (
         <>
@@ -65,4 +68,96 @@ export function ProfileTab({ venue, readOnly, onSaved }: { venue: Venue; readOnl
       )}
     </section>
   )
+}
+
+// Логотип: картинка обрезается до квадрата и уменьшается до 512×512 прямо на телефоне,
+// сервер ещё раз проверяет и перекодирует файл.
+function LogoField({ venue, readOnly, onSaved }: { venue: Venue; readOnly: boolean; onSaved: () => void }) {
+  const nav = useNav()
+  const [busy, setBusy] = useState(false)
+  const [logo, setLogo] = useState(venue.logo_url)
+
+  async function pick(file: File | undefined) {
+    if (!file) return
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      nav.toast('Нужна картинка PNG, JPG или WebP')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      nav.toast('Файл больше 5 МБ')
+      return
+    }
+    setBusy(true)
+    try {
+      const blob = await squareLogo(file)
+      const v = await api.uploadLogo(venue.id, blob)
+      setLogo(v.logo_url)
+      nav.toast('Логотип обновлён')
+      onSaved()
+    } catch (e) {
+      nav.toast(e instanceof Error ? e.message : 'Не получилось загрузить логотип')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function remove() {
+    setBusy(true)
+    try {
+      await api.deleteLogo(venue.id)
+      setLogo(undefined)
+      onSaved()
+    } catch (e) {
+      nav.toast(e instanceof Error ? e.message : 'Не получилось удалить')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="logo-field">
+      <VenueLogo venue={{ name: venue.name, logo_url: logo }} size={72} />
+      <div className="logo-field__main">
+        <b>Логотип</b>
+        <small className="muted">Квадратная картинка PNG, JPG или WebP от 256×256 пикселей (лучше 512×512), до 5 МБ. Показывается в круге: важное — в центре, без мелкого текста и рамок. Подойдёт прозрачный или однотонный фон.</small>
+        {!readOnly && (
+          <div className="row">
+            <label className={`btn btn--secondary btn--md${busy ? ' btn--disabled' : ''}`}>
+              {busy ? 'Загружаем…' : logo ? 'Заменить' : 'Загрузить'}
+              <input type="file" accept="image/png,image/jpeg,image/webp" hidden disabled={busy} onChange={(e) => pick(e.target.files?.[0])} />
+            </label>
+            {logo && <Btn variant="ghost" disabled={busy} onClick={remove}>Удалить</Btn>}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// squareLogo — центральный квадрат, не больше 512×512, PNG (с прозрачностью) или JPEG.
+async function squareLogo(file: File): Promise<Blob> {
+  const url = URL.createObjectURL(file)
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image()
+      el.onload = () => resolve(el)
+      el.onerror = () => reject(new Error('Не получилось открыть картинку'))
+      el.src = url
+    })
+    const side = Math.min(img.naturalWidth, img.naturalHeight)
+    if (side < 256) throw new Error('Картинка меньше 256×256 пикселей — логотип будет размытым')
+    const out = Math.min(512, side)
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = out
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Браузер не поддерживает обработку картинок')
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, out, out)
+    const type = file.type === 'image/jpeg' ? 'image/jpeg' : 'image/png'
+    return await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Не получилось подготовить картинку'))), type, 0.9),
+    )
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }

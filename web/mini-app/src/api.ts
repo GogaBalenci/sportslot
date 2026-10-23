@@ -21,6 +21,7 @@ export type Venue = {
   what_to_bring?: string
   trial_price?: number
   verified_at?: string
+  logo_url?: string
 }
 
 export type SlotInfo = {
@@ -224,6 +225,9 @@ export type Catalog = {
 
 export type QuizResult = { sport: string; title: string; reason: string }
 
+// assetUrl — адрес файла с сервера API (логотипы), с учётом VITE_API_BASE_URL.
+export const assetUrl = (path?: string) => (path ? `${BASE}${path}` : '')
+
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) {
     super(message)
@@ -266,8 +270,8 @@ async function request<T>(method: string, path: string, body?: unknown, headers:
 const user = <T>(method: string, path: string, body?: unknown) => request<T>(method, path, body, userHeaders())
 
 // Кабинет студии: администратор входит по подписи MAX, проверяющие — по демо-коду.
-const studio = <T>(method: string, path: string, body?: unknown) =>
-  request<T>(method, path, body, partnerToken ? { Authorization: `Partner ${partnerToken}` } : userHeaders())
+const studioHeaders = (): Record<string, string> => (partnerToken ? { Authorization: `Partner ${partnerToken}` } : userHeaders())
+const studio = <T>(method: string, path: string, body?: unknown) => request<T>(method, path, body, studioHeaders())
 
 export type VenueQuery = {
   sport?: string
@@ -312,7 +316,7 @@ export const api = {
   payment: (id: string) => user<Payment>('GET', `/payments/${id}`),
   myPasses: () => user<{ passes: UserPass[] }>('GET', '/me/passes'),
   buyPass: (passId: string) =>
-    user<{ user_pass: UserPass; payment?: Payment; payment_error?: boolean }>('POST', `/passes/${passId}/buy`),
+    user<{ user_pass: UserPass; payment?: Payment; payment_error?: boolean; created: boolean }>('POST', `/passes/${passId}/buy`),
   payPass: (id: string) => user<Payment>('POST', `/me/passes/${id}/pay`),
   cancelPassRequest: (id: string) => user<void>('POST', `/me/passes/${id}/cancel`),
 
@@ -358,6 +362,17 @@ export const api = {
   confirmPass: (venueId: string, id: string) => studio<UserPass>('POST', `/studio/${venueId}/user-passes/${id}/confirm`),
   declinePass: (venueId: string, id: string) => studio<void>('POST', `/studio/${venueId}/user-passes/${id}/decline`),
   studioReviews: (venueId: string) => studio<ReviewSummary>('GET', `/studio/${venueId}/reviews`),
+  uploadLogo: async (venueId: string, file: Blob) => {
+    const res = await fetch(`${BASE}/api/v1/studio/${venueId}/logo`, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type || 'application/octet-stream', ...studioHeaders() },
+      body: file,
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new ApiError(res.status, data.code ?? 'error', data.error ?? 'Не получилось загрузить логотип')
+    return data as Venue
+  },
+  deleteLogo: (venueId: string) => studio<void>('DELETE', `/studio/${venueId}/logo`),
 
   platformStudios: () => studio<{ studios: PlatformStudio[] }>('GET', '/platform/studios'),
   platformCatalog: (q: string) => studio<{ venues: Venue[] }>('GET', `/platform/catalog?q=${encodeURIComponent(q)}`),

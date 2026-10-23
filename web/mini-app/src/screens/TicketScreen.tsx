@@ -133,7 +133,7 @@ export function TicketScreen({ id, fresh }: { id: string; fresh?: boolean }) {
       {b.is_guest && (
         <section className="info-card friend-card">
           <b>👥 Это место для друга</b>
-          <p className="muted small">Отправь другу ссылку: он получит свой пропуск и напоминания. Если не успеет — покажите этот QR на входе.</p>
+          <p className="muted small">Отправь другу ссылку: он получит свой пропуск и напоминания. Если друг не откроет её за 2 часа до начала, место освободится для других.</p>
           <FriendLink bookingId={b.host_booking_id ?? ''} onShare={shareFriend} />
         </section>
       )}
@@ -197,7 +197,7 @@ export function TicketScreen({ id, fresh }: { id: string; fresh?: boolean }) {
                 ) : (
                   <>
                     <b>👥 Место для друга забронировано</b>
-                    <p className="muted small">Пока друг не открыл ссылку, его пропуск у тебя.</p>
+                    <p className="muted small">Пока друг не открыл ссылку, его пропуск у тебя. Не откроет за 2 часа до начала — место освободится.</p>
                     <div className="row">
                       <Btn icon={<Share2 size={16} />} onClick={() => friend.link && shareFriend(friend.link)}>Отправить ссылку</Btn>
                       <Btn variant="secondary" onClick={() => nav.push({ name: 'ticket', id: friend.booking.id })}>Пропуск друга</Btn>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Globe, MapPin, MessageCircle, Navigation, Phone } from 'lucide-react'
-import { api, type Booking, type Pass, type ReviewSummary, type SlotInfo, type VenueDetails } from '../api'
-import { AccessBadge, BookingSheet, Btn, Empty, ErrorBlock, Loader, SlotPill, SportBadge, Stars, districtTitle } from '../components'
+import { api, type Booking, type Pass, type ReviewSummary, type SlotInfo, type UserPass, type VenueDetails } from '../api'
+import { AccessBadge, BookingSheet, Btn, Empty, ErrorBlock, Loader, Sheet, SlotPill, SportBadge, Stars, VenueLogo, districtTitle } from '../components'
 import { catalogDate, dayKey, dayNumber, dayTitle, hours, nextDays, routeUrl, trial } from '../format'
 import { haptic, openExternal } from '../max'
 import { useNav } from '../nav'
@@ -58,8 +58,14 @@ export function VenueScreen({ id, reschedule }: { id: string; reschedule?: strin
           {venue.sports.filter((s) => s !== 'multi').map((s) => <SportBadge key={s} sport={s} />)}
           <AccessBadge venue={venue} />
         </div>
-        <h1 className="h1">{venue.name}</h1>
-        {venue.reviews && venue.reviews.count > 0 && <Stars average={venue.reviews.average} count={venue.reviews.count} />}
+        <div className="venue-title">
+          {venue.logo_url && <VenueLogo venue={venue} size={56} />}
+          <div>
+            <h1 className="h1">{venue.name}</h1>
+            {venue.reviews && venue.reviews.count > 0 && <Stars average={venue.reviews.average} count={venue.reviews.count} />}
+          </div>
+        </div>
+        {venue.description && <p className="venue-about">{venue.description}</p>}
         {place && <div className="meta"><MapPin size={14} /><span>{place}</span></div>}
         <div className="row row--wrap">
           <Btn variant="secondary" icon={<Navigation size={18} />} onClick={() => openExternal(routeUrl(venue.lat, venue.lon, nav.origin))}>Маршрут</Btn>
@@ -128,7 +134,9 @@ export function VenueScreen({ id, reschedule }: { id: string; reschedule?: strin
           )}
           {venue.passes && venue.passes.length > 0 && <PassesSection venue={venue} />}
           {venue.reviews && venue.reviews.count > 0 && <ReviewsSection reviews={venue.reviews} />}
-          {venue.description && <p className="muted small">{venue.description}</p>}
+          {venue.source === 'demo_partner' && (
+            <p className="muted small">Демо-партнёр: студия вымышлена, адрес условный, расписание модельное. На ней можно пройти весь путь — от записи до отметки посещения по QR.</p>
+          )}
         </>
       ) : (
         <div className="info-card">
@@ -147,15 +155,32 @@ export function VenueScreen({ id, reschedule }: { id: string; reschedule?: strin
 const visitsLabel = (n: number) =>
   `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'занятие' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'занятия' : 'занятий'}`
 
-// Абонементы студии: онлайн-оплата, если подключена, иначе заявка с оплатой на месте.
+// Абонементы студии. Покупка — в два шага: сначала условия, потом подтверждение,
+// чтобы случайное нажатие не отправляло заявку студии.
 function PassesSection({ venue }: { venue: VenueDetails }) {
   const nav = useNav()
-  const [busy, setBusy] = useState('')
-  const online = venue.online_payment?.passes
-  async function buy(p: Pass) {
-    setBusy(p.id)
+  const [mine, setMine] = useState<UserPass[]>([])
+  const [picked, setPicked] = useState<Pass | null>(null)
+  const [busy, setBusy] = useState(false)
+  const online = !!venue.online_payment?.passes
+
+  const loadMine = () => {
+    api
+      .myPasses()
+      .then((r) => setMine(r.passes.filter((p) => p.venue_id === venue.id)))
+      .catch(() => setMine([]))
+  }
+  useEffect(loadMine, [venue.id])
+
+  const request = mine.find((p) => p.status === 'requested')
+  const active = mine.find((p) => p.status === 'active')
+
+  async function confirm(p: Pass) {
+    setBusy(true)
     try {
       const r = await api.buyPass(p.id)
+      setPicked(null)
+      loadMine()
       if (r.payment?.confirmation_url) {
         openExternal(r.payment.confirmation_url)
         nav.push({ name: 'payment', id: r.payment.id })
@@ -163,29 +188,65 @@ function PassesSection({ venue }: { venue: VenueDetails }) {
         nav.toast('Платёжная система не ответила. Заявка сохранена — оплатить можно позже в «Моих занятиях»')
       } else {
         haptic('success')
-        nav.toast('Заявка отправлена студии. Оплатите на месте — студия включит абонемент')
+        nav.toast(r.created ? 'Заявка отправлена студии' : 'Заявка уже отправлена — студия свяжется с тобой')
       }
     } catch (e) {
       nav.toast(e instanceof Error ? e.message : 'Не получилось оформить абонемент')
     } finally {
-      setBusy('')
+      setBusy(false)
     }
   }
+
   return (
     <>
       <h2 className="h2 section">Абонементы</h2>
+      {active && (
+        <div className="note note--mint">🎟 У тебя активен «{active.title}»: осталось {active.visits_left} из {active.visits_total}. Занятия спишутся автоматически при записи.</div>
+      )}
+      {request && !online && (
+        <div className="note">Заявка на «{request.title}» отправлена студии. Оплати на месте — абонемент включится после подтверждения. Отменить заявку можно в «Моих занятиях».</div>
+      )}
       <div className="stack">
-        {venue.passes!.map((p) => (
-          <div key={p.id} className="pass-card">
-            <div className="pass-card__main">
-              <b>{p.title}</b>
-              <span className="muted small">{visitsLabel(p.visits)} · действует {p.valid_days} дн.</span>
+        {venue.passes!.map((p) => {
+          const requested = request?.pass_id === p.id
+          return (
+            <div key={p.id} className="pass-card">
+              <div className="pass-card__main">
+                <b>{p.title}</b>
+                <span className="muted small">{visitsLabel(p.visits)} · действует {p.valid_days} дн.</span>
+              </div>
+              <Btn variant={requested ? 'secondary' : 'primary'} disabled={!!request && !requested && !online} onClick={() => setPicked(p)}>
+                {requested ? (online ? 'Оплатить' : 'Заявка отправлена') : `${p.price.toLocaleString('ru-RU')} ₽`}
+              </Btn>
             </div>
-            <Btn loading={busy === p.id} onClick={() => buy(p)}>{p.price.toLocaleString('ru-RU')} ₽</Btn>
-          </div>
-        ))}
+          )
+        })}
       </div>
-      <p className="muted small">{online ? 'Оплата картой или через СБП на странице студии. Визиты списываются при записи, при отмене возвращаются.' : 'Оплата на месте: студия получит заявку и включит абонемент после оплаты.'}</p>
+      {picked && (
+        <Sheet onClose={() => !busy && setPicked(null)}>
+          <h2 className="h2">{picked.title}</h2>
+          <div className="summary">
+            <div className="summary__row"><span><b>{picked.price.toLocaleString('ru-RU')} ₽</b> · {visitsLabel(picked.visits)}</span></div>
+            <div className="summary__row"><span>{venue.name}<small>{venue.address}</small></span></div>
+          </div>
+          <ul className="rules">
+            <li>Действует {picked.valid_days} дн. с момента {online ? 'оплаты' : 'подтверждения студией'}.</li>
+            <li>Визит списывается при записи на занятие. Отменишь запись — занятие вернётся в абонемент.</li>
+            <li>Неявка без отмены сгорает так же, как в студии.</li>
+            {online ? (
+              <li>Оплата картой или через СБП на странице студии — деньги получает студия. Возврат — по правилам студии.</li>
+            ) : (
+              <li>Студия получит заявку и свяжется с тобой. Оплата — на месте, после неё абонемент включится. В одной студии — одна заявка за раз.</li>
+            )}
+          </ul>
+          <div className="stack">
+            <Btn size="lg" block loading={busy} onClick={() => confirm(picked)}>
+              {online ? `Перейти к оплате · ${picked.price.toLocaleString('ru-RU')} ₽` : 'Отправить заявку студии'}
+            </Btn>
+            <Btn size="lg" variant="ghost" block disabled={busy} onClick={() => setPicked(null)}>Не сейчас</Btn>
+          </div>
+        </Sheet>
+      )}
     </>
   )
 }
