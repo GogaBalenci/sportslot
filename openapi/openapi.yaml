@@ -265,6 +265,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+        "429": { description: "Лимит: не больше 10 будущих записей и 12 новых в час (текст в поле error)" }
   /api/v1/bookings/{id}:
     get:
       tags: [bookings]
@@ -1043,6 +1044,43 @@ paths:
       parameters: [{ $ref: "#/components/parameters/VenueId" }]
       responses:
         "200": { description: "{average, count, items: [{rating, text, author, date}]}" }
+  /api/v1/venues/{id}/logo:
+    get:
+      tags: [catalog]
+      summary: Логотип студии (адрес с версией из поля logo_url, кэшируется надолго)
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: PNG или JPEG 512×512
+          content:
+            image/png: { schema: { type: string, format: binary } }
+            image/jpeg: { schema: { type: string, format: binary } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/studio/{venue_id}/logo:
+    put:
+      tags: [studio]
+      summary: Загрузить логотип — PNG или JPEG от 256×256 до 5 МБ; приводится к квадрату 512×512 и перекодируется
+      security: [{ initData: [] }]
+      parameters: [{ $ref: "#/components/parameters/VenueId" }]
+      requestBody:
+        required: true
+        content:
+          image/png: { schema: { type: string, format: binary } }
+          image/jpeg: { schema: { type: string, format: binary } }
+      responses:
+        "200":
+          description: Студия с новым logo_url
+          content: { application/json: { schema: { $ref: "#/components/schemas/Venue" } } }
+        "400": { description: Не картинка или слишком маленькая }
+        "403": { description: Демо-доступ только просматривает }
+        "413": { description: Файл больше 5 МБ }
+    delete:
+      tags: [studio]
+      summary: Удалить логотип
+      security: [{ initData: [] }]
+      parameters: [{ $ref: "#/components/parameters/VenueId" }]
+      responses:
+        "204": { description: Логотип удалён }
   /bot/webhook:
     post:
       tags: [system]
@@ -1121,6 +1159,7 @@ components:
       type: object
       properties:
         id: { type: string, format: uuid }
+        logo_url: { type: string, description: "Логотип студии, если загружен: /api/v1/venues/{id}/logo?v=<версия>" }
         external_id: { type: string, example: "osm:way/123456" }
         name: { type: string }
         sport_type: { $ref: "#/components/schemas/SportId" }
