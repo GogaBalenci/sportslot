@@ -72,6 +72,9 @@ func (r *studioRecorder) PaymentReceived(_ context.Context, p *model.Payment, _ 
 func (r *studioRecorder) PassActivated(_ context.Context, up *model.UserPass) error {
 	return r.push("pass-active:" + up.MaxUserID)
 }
+func (r *studioRecorder) FriendPlaceReleased(_ context.Context, host string, _ *model.BookingView) error {
+	return r.push("friend-released:" + host)
+}
 func (r *studioRecorder) PassDeclined(_ context.Context, up *model.UserPass) error {
 	return r.push("pass-declined:" + up.MaxUserID)
 }

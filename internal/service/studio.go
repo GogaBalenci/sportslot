@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"sportslot/internal/catalog"
 	"sportslot/internal/geocode"
@@ -382,6 +383,9 @@ func (s *StudioService) UpdateProfile(ctx context.Context, a Access, venueID str
 	if p.TrialPrice != nil && (*p.TrialPrice < 0 || *p.TrialPrice > 100000) {
 		return nil, ErrInvalidRequest
 	}
+	if utf8.RuneCountInString(strings.TrimSpace(p.Description)) > 300 || utf8.RuneCountInString(strings.TrimSpace(p.WhatToBring)) > 300 {
+		return nil, ErrInvalidRequest
+	}
 	if p.Website != "" && !strings.HasPrefix(p.Website, "http") {
 		p.Website = "https://" + p.Website
 	}
@@ -488,6 +492,17 @@ func (s *StudioService) SendClientMessage(ctx context.Context, maxUserID, name, 
 	user, err := s.store.EnsureUser(ctx, maxUserID, name)
 	if err != nil {
 		return nil, err
+	}
+	now := s.now()
+	if n, err := s.store.CountClientMessages(ctx, user.ID, venueID, now.Add(-10*time.Minute)); err != nil {
+		return nil, err
+	} else if n >= maxMessagesToStudio {
+		return nil, limit("Ты уже написал студии несколько сообщений подряд. Дождись ответа — он придёт в чат.")
+	}
+	if n, err := s.store.CountClientMessages(ctx, user.ID, "", now.Add(-time.Hour)); err != nil {
+		return nil, err
+	} else if n >= maxMessagesPerHour {
+		return nil, limit("Слишком много сообщений за час. Попробуй позже.")
 	}
 	m := &model.Message{VenueID: venueID, UserID: user.ID, Author: "client", Text: text}
 	if err := s.store.AddMessage(ctx, m); err != nil {

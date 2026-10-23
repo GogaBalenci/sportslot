@@ -213,19 +213,22 @@ func (s *Store) GetUserPass(ctx context.Context, id string) (*model.UserPass, er
 
 // RequestUserPass — клиент выбрал абонемент: заявка ждёт оплаты или подтверждения студии.
 // Повторная заявка на тот же абонемент возвращает уже открытую.
-func (s *Store) RequestUserPass(ctx context.Context, pass *model.Pass, userID string) (*model.UserPass, error) {
+func (s *Store) RequestUserPass(ctx context.Context, pass *model.Pass, userID string) (*model.UserPass, bool, error) {
 	var id string
+	created := false
 	err := s.pool.QueryRow(ctx, `SELECT id FROM user_passes WHERE user_id = $1 AND pass_id = $2 AND status = 'requested'`,
 		userID, pass.ID).Scan(&id)
 	if err == pgx.ErrNoRows {
+		created = true
 		err = s.pool.QueryRow(ctx, `INSERT INTO user_passes (pass_id, venue_id, user_id, title, visits_total, visits_left, valid_days, price)
 			VALUES ($1, $2, $3, $4, $5, $5, $6, $7) RETURNING id`,
 			pass.ID, pass.VenueID, userID, pass.Title, pass.Visits, pass.ValidDays, pass.Price).Scan(&id)
 	}
 	if err != nil {
-		return nil, wrap("request pass", err)
+		return nil, false, wrap("request pass", err)
 	}
-	return s.GetUserPass(ctx, id)
+	up, err := s.GetUserPass(ctx, id)
+	return up, created, err
 }
 
 // ActivateUserPass включает абонемент после оплаты. changed=false — он уже был активирован.
@@ -663,4 +666,65 @@ func (s *Store) SeriesSlots(ctx context.Context, slot *model.Slot, count int) ([
 	}
 	return s.ListSlots(ctx, SlotQuery{VenueIDs: []string{slot.VenueID}, TemplateID: slot.TemplateID,
 		From: slot.StartAt.Add(time.Hour), To: slot.StartAt.AddDate(0, 0, 7*count+1), Limit: count})
+}
+
+// --- Счётчики для лимитов ---
+
+func (s *Store) count(ctx context.Context, op, query string, args ...interface{}) (int, error) {
+	var n int
+	err := s.pool.QueryRow(ctx, query, args...).Scan(&n)
+	return n, wrap(op, err)
+}
+
+// ActiveBooking — своя активная запись пользователя на занятие, если есть.
+func (s *Store) HasActiveBooking(ctx context.Context, userID, slotID string) (bool, error) {
+	n, err := s.count(ctx, "has booking", `SELECT count(*) FROM bookings WHERE user_id = $1 AND slot_id = $2
+		AND status = 'confirmed' AND guest_token IS NULL`, userID, slotID)
+	return n > 0, err
+}
+
+// CountUpcomingBookings — свои активные записи на будущие занятия.
+func (s *Store) CountUpcomingBookings(ctx context.Context, userID string, now time.Time) (int, error) {
+	return s.count(ctx, "count upcoming", `SELECT count(*) FROM bookings b JOIN slots s ON s.id = b.slot_id
+		WHERE b.user_id = $1 AND b.status = 'confirmed' AND b.guest_token IS NULL AND s.start_at > $2`, userID, now)
+}
+
+func (s *Store) CountBookingsSince(ctx context.Context, userID string, since time.Time) (int, error) {
+	return s.count(ctx, "count recent bookings", `SELECT count(*) FROM bookings WHERE user_id = $1 AND created_at >= $2`, userID, since)
+}
+
+// CountOpenGuests — места для друзей, которые ещё никто не принял.
+func (s *Store) CountOpenGuests(ctx context.Context, userID string, now time.Time) (int, error) {
+	return s.count(ctx, "count guests", `SELECT count(*) FROM bookings b JOIN slots s ON s.id = b.slot_id
+		WHERE b.user_id = $1 AND b.status = 'confirmed' AND b.guest_token IS NOT NULL AND s.start_at > $2`, userID, now)
+}
+
+// UnclaimedGuests — непринятые места для друзей на занятия, которые начнутся раньше deadline.
+func (s *Store) UnclaimedGuests(ctx context.Context, deadline time.Time) ([]model.BookingView, error) {
+	return s.queryViews(ctx, `WHERE b.status = 'confirmed' AND b.guest_token IS NOT NULL AND s.start_at <= $1
+		ORDER BY s.start_at LIMIT 100`, deadline)
+}
+
+// OpenPassRequest — неоплаченная заявка пользователя на абонемент в студии.
+func (s *Store) OpenPassRequest(ctx context.Context, userID, venueID string) (*model.UserPass, error) {
+	p, err := scanUserPass(s.pool.QueryRow(ctx, `SELECT `+userPassColumns+userPassFrom+`
+		WHERE up.user_id = $1 AND up.venue_id = $2 AND up.status = 'requested' ORDER BY up.created_at DESC LIMIT 1`, userID, venueID))
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	return p, wrap("open pass request", err)
+}
+
+func (s *Store) CountOpenPassRequests(ctx context.Context, userID string) (int, error) {
+	return s.count(ctx, "count pass requests", `SELECT count(*) FROM user_passes WHERE user_id = $1 AND status = 'requested'`, userID)
+}
+
+func (s *Store) CountPassRequestsSince(ctx context.Context, userID string, since time.Time) (int, error) {
+	return s.count(ctx, "count recent pass requests", `SELECT count(*) FROM user_passes WHERE user_id = $1 AND created_at >= $2`, userID, since)
+}
+
+// CountClientMessages — сообщения клиента студиям (venueID пустой — всем студиям).
+func (s *Store) CountClientMessages(ctx context.Context, userID, venueID string, since time.Time) (int, error) {
+	return s.count(ctx, "count messages", `SELECT count(*) FROM studio_messages WHERE user_id = $1 AND author = 'client'
+		AND created_at >= $2 AND ($3 = '' OR venue_id::text = $3)`, userID, since, venueID)
 }

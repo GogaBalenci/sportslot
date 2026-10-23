@@ -490,3 +490,88 @@ func TestDigestAndUnansweredMessages(t *testing.T) {
 		t.Fatalf("response stats after reply: %+v", stats.Response)
 	}
 }
+
+func TestAntiAbuseLimits(t *testing.T) {
+	e := newCommerceEnv(t)
+	ctx := context.Background()
+
+	// Повторное нажатие «купить» не создаёт новую заявку и не пишет студии ещё раз.
+	p1, _ := e.commerce.SavePass(ctx, e.admin, poolVenue, model.Pass{Title: "4 занятия", Visits: 4, ValidDays: 30, Price: 1800, Active: true})
+	p2, _ := e.commerce.SavePass(ctx, e.admin, poolVenue, model.Pass{Title: "8 занятий", Visits: 8, ValidDays: 45, Price: 3200, Active: true})
+	first, err := e.commerce.RequestPass(ctx, "spam-1", "Спамер", p1.ID)
+	if err != nil || !first.Created {
+		t.Fatalf("first request: %+v %v", first, err)
+	}
+	e.rec.expect(t, "passreq:700:spam-1")
+	again, err := e.commerce.RequestPass(ctx, "spam-1", "Спамер", p1.ID)
+	if err != nil || again.Created || again.UserPass.ID != first.UserPass.ID {
+		t.Fatalf("repeat must return the same request: %+v %v", again, err)
+	}
+	var le *service.LimitError
+	if _, err := e.commerce.RequestPass(ctx, "spam-1", "Спамер", p2.ID); !errors.As(err, &le) {
+		t.Fatalf("second request in the same studio must be limited, got %v", err)
+	}
+	select {
+	case got := <-e.rec.done:
+		if strings.HasPrefix(got, "passreq:") {
+			t.Fatalf("duplicate notification: %s", got)
+		}
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	// Больше двух непринятых мест для друзей держать нельзя.
+	now := time.Now()
+	slots, _ := e.store.ListSlots(ctx, postgres.SlotQuery{VenueIDs: []string{poolVenue, seedFlagship},
+		From: now.Add(3 * time.Hour), To: now.Add(14 * 24 * time.Hour), OnlyAvailable: true})
+	var hosts []model.BookingView
+	for i := 0; len(hosts) < 3 && i < len(slots); i++ {
+		if slots[i].QuotaAvailable() < 2 {
+			continue
+		}
+		v, _, err := e.bookings.Book(ctx, "host-9", "Хост", slots[i].ID, model.SourceChannelMiniApp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		hosts = append(hosts, *v)
+	}
+	for i, h := range hosts {
+		_, err := e.bookings.AddFriend(ctx, h.ID, "host-9")
+		if i < 2 && err != nil {
+			t.Fatalf("friend place %d: %v", i, err)
+		}
+		if i == 2 && !errors.As(err, &le) {
+			t.Fatalf("third open friend place must be limited, got %v", err)
+		}
+	}
+	// Непринятое место освобождается за 2 часа до начала, пригласившему приходит сообщение.
+	before := hosts[0].Slot
+	e.bookings.ReleaseUnclaimedFriends(ctx, before.StartAt.Add(-time.Hour))
+	e.rec.expect(t, "friend-released:host-9")
+	if s, _ := e.store.GetSlot(ctx, before.ID); s.QuotaBooked != before.QuotaBooked {
+		t.Fatalf("released place must return to the quota: %d -> %d", before.QuotaBooked, s.QuotaBooked)
+	}
+
+	// Не больше 10 будущих записей.
+	booked := 0
+	var limited error
+	for _, s := range slots {
+		if _, _, err := e.bookings.Book(ctx, "greedy", "Жадный", s.ID, model.SourceChannelMiniApp); err != nil {
+			limited = err
+			break
+		}
+		booked++
+	}
+	if booked != 10 || !errors.As(limited, &le) {
+		t.Fatalf("booked %d before the limit, err %v", booked, limited)
+	}
+
+	// Не больше пяти сообщений одной студии за 10 минут.
+	for i := 0; i < 5; i++ {
+		if _, err := e.studio.SendClientMessage(ctx, "chatty", "Болтун", poolVenue, fmt.Sprintf("вопрос %d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := e.studio.SendClientMessage(ctx, "chatty", "Болтун", poolVenue, "ещё вопрос"); !errors.As(err, &le) {
+		t.Fatalf("sixth message must be limited, got %v", err)
+	}
+}

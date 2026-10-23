@@ -25,6 +25,14 @@ type Dependencies struct {
 	Auth          UserAuth
 	CORSOrigins   []string
 	WebhookSecret string
+	// BotFlood — лимиты событий бота от одного человека; пусто — значения по умолчанию.
+	BotFlood *BotFlood
+}
+
+// BotFlood: Events событий за Window; одинаковые события чаще Repeat отбрасываются.
+type BotFlood struct {
+	Events         int
+	Window, Repeat time.Duration
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -50,6 +58,7 @@ func NewRouter(deps Dependencies) http.Handler {
 		geocoder: deps.Geocoder,
 		logins:   newLimiter(10, time.Minute),
 		lookups:  newLimiter(40, time.Minute),
+		writes:   newLimiter(40, time.Minute),
 		now:      time.Now,
 	}
 	var ping func(ctx context.Context) error
@@ -82,6 +91,7 @@ func NewRouter(deps Dependencies) http.Handler {
 
 		r.Group(func(r chi.Router) {
 			r.Use(deps.Auth.Require)
+			r.Use(api.limitWrites)
 			r.Get("/me", api.Me)
 			r.Post("/bookings", api.CreateBooking)
 			r.Get("/bookings/{id}", api.GetBooking)
@@ -108,12 +118,14 @@ func NewRouter(deps Dependencies) http.Handler {
 		})
 
 		// Уведомления платёжных систем: магазин определяется по студии в адресе.
-		r.Post("/payments/yookassa/{venueID}", api.YooKassaWebhook)
-		r.Post("/payments/tbank/{venueID}", api.TBankWebhook)
+		r.With(limitIP(newLimiter(300, time.Minute))).Post("/payments/yookassa/{venueID}", api.YooKassaWebhook)
+		r.With(limitIP(newLimiter(300, time.Minute))).Post("/payments/tbank/{venueID}", api.TBankWebhook)
+		r.Get("/venues/{id}/logo", api.VenueLogo)
 
 		r.Get("/studio/me", api.StudioMe)
 		r.Group(func(r chi.Router) {
 			r.Use(api.requireStudio)
+			r.Use(api.limitWrites)
 			r.Post("/studio/checkin", api.StudioCheckIn)
 			r.Get("/studio/bookings/{bookingID}", api.StudioBooking)
 			r.Post("/studio/bookings/{bookingID}/remind", api.StudioRemind)
@@ -141,6 +153,8 @@ func NewRouter(deps Dependencies) http.Handler {
 				r.Post("/user-passes/{userPassID}/confirm", api.StudioConfirmPass)
 				r.Post("/user-passes/{userPassID}/decline", api.StudioDeclinePass)
 				r.Get("/reviews", api.StudioReviews)
+				r.Put("/logo", api.StudioUploadLogo)
+				r.Delete("/logo", api.StudioDeleteLogo)
 			})
 			r.Get("/platform/studios", api.PlatformStudios)
 			r.Get("/platform/catalog", api.PlatformCatalog)
@@ -159,7 +173,13 @@ func NewRouter(deps Dependencies) http.Handler {
 	})
 	if deps.Bot != nil {
 		api.location = deps.Bot
-		webhook := &BotWebhook{bot: deps.Bot, secret: deps.WebhookSecret}
+		flood := BotFlood{Events: 5, Window: 3 * time.Second, Repeat: 2 * time.Second}
+		if deps.BotFlood != nil {
+			flood = *deps.BotFlood
+		}
+		webhook := &BotWebhook{bot: deps.Bot, secret: deps.WebhookSecret,
+			rate: newLimiter(flood.Events, flood.Window), repeats: newLimiter(1, flood.Repeat),
+			warns: newLimiter(1, 30*time.Second), answers: newLimiter(10, 10*time.Second)}
 		r.Post("/bot/webhook", webhook.Handle)
 	}
 	return r

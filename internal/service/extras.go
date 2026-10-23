@@ -17,6 +17,7 @@ type ClientPresenter interface {
 	PaymentReceived(ctx context.Context, p *model.Payment, v *model.BookingView, up *model.UserPass) error
 	PassActivated(ctx context.Context, up *model.UserPass) error
 	PassDeclined(ctx context.Context, up *model.UserPass) error
+	FriendPlaceReleased(ctx context.Context, hostMaxID string, guest *model.BookingView) error
 }
 
 // SetClientPresenter подключает сообщения о друзьях, оплатах и абонементах.
@@ -101,6 +102,23 @@ func (s *BookingService) AddFriend(ctx context.Context, bookingID, maxUserID str
 	}
 	if host.IsGuest || host.HostBookingID != "" {
 		return nil, ErrInvalidRequest
+	}
+	if existing, err := s.store.GuestOf(ctx, bookingID); err == nil && existing != nil {
+		return s.friendPlace(ctx, existing.ID)
+	}
+	now := time.Now()
+	if host.Slot.StartAt.Sub(now) <= friendReleaseBefore {
+		return nil, limit("Место для друга можно взять не позже чем за 2 часа до начала — друг может записаться сам.")
+	}
+	if n, err := s.store.CountOpenGuests(ctx, host.UserID, now); err != nil {
+		return nil, err
+	} else if n >= maxOpenFriendPlaces {
+		return nil, limit("Сейчас уже два места ждут твоих друзей. Когда они примут приглашения, можно будет позвать ещё.")
+	}
+	if n, err := s.store.CountBookingsSince(ctx, host.UserID, now.Add(-time.Hour)); err != nil {
+		return nil, err
+	} else if n >= maxBookingsPerHour {
+		return nil, limit("Слишком много записей за последний час. Попробуй чуть позже.")
 	}
 	guest, err := s.store.AddGuest(ctx, bookingID)
 	if err != nil {

@@ -33,7 +33,7 @@ func passLine(up *model.UserPass) string {
 // FriendInvite — сообщение со ссылкой для друга: его удобно переслать.
 func (p *Presenter) FriendInvite(ctx context.Context, hostMaxID string, guest *model.BookingView, link string) error {
 	if err := p.client.SendMessage(ctx, hostMaxID,
-		"👥 <b>Место для друга забронировано</b>\nПерешли другу сообщение ниже: по ссылке он получит свой QR-пропуск и напоминания. Пока друг не открыл ссылку, второй пропуск — в твоих записях.", nil); err != nil {
+		"👥 <b>Место для друга забронировано</b>\nПерешли другу сообщение ниже: по ссылке он получит свой QR-пропуск и напоминания. Пока друг не открыл ссылку, второй пропуск — в твоих записях.\n<i>Если друг не откроет ссылку за 2 часа до начала, место освободится для других.</i>", nil); err != nil {
 		return err
 	}
 	text := fmt.Sprintf("🏃 <b>Пойдём вместе на тренировку?</b>\n\n%s\n\nЯ записал нас обоих. Открой ссылку, чтобы получить свой пропуск в СпортСлот:\n%s",
@@ -49,6 +49,13 @@ func (p *Presenter) FriendJoined(ctx context.Context, hostMaxID, friendName stri
 	}
 	text := fmt.Sprintf("🤝 <b>%s принял приглашение</b>\n%s, %s в %s.\nУ каждого теперь свой пропуск и свои напоминания.",
 		who, esc(v.Slot.Title), dayLabel(v.Slot.StartAt, p.now()), clock(v.Slot.StartAt))
+	return p.client.SendMessage(ctx, hostMaxID, text, nil)
+}
+
+// FriendPlaceReleased — друг не принял приглашение, место отдано другим.
+func (p *Presenter) FriendPlaceReleased(ctx context.Context, hostMaxID string, guest *model.BookingView) error {
+	text := fmt.Sprintf("👥 Друг не открыл приглашение, поэтому место для него на «%s» (%s в %s) освободилось. Твоя запись в силе.",
+		esc(guest.Slot.Title), dayLabel(guest.Slot.StartAt, p.now()), clock(guest.Slot.StartAt))
 	return p.client.SendMessage(ctx, hostMaxID, text, nil)
 }
 

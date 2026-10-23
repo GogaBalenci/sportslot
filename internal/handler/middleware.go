@@ -90,6 +90,7 @@ type limiter struct {
 	max    int
 	window time.Duration
 	hits   map[string][]time.Time
+	calls  int
 }
 
 func newLimiter(max int, window time.Duration) *limiter {
@@ -99,6 +100,14 @@ func newLimiter(max int, window time.Duration) *limiter {
 func (l *limiter) allow(key string, now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	// Время от времени выбрасываем старые ключи, чтобы карта не росла бесконечно.
+	if l.calls++; l.calls%1000 == 0 {
+		for k, ts := range l.hits {
+			if len(ts) == 0 || now.Sub(ts[len(ts)-1]) >= l.window {
+				delete(l.hits, k)
+			}
+		}
+	}
 	recent := l.hits[key][:0]
 	for _, t := range l.hits[key] {
 		if now.Sub(t) < l.window {
@@ -123,4 +132,37 @@ func clientIP(r *http.Request) string {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// limitWrites — не больше 40 изменяющих запросов в минуту от одного пользователя
+// мини-приложения или кабинета: защита от скриптов и случайных повторов.
+func (a *API) limitWrites(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
+			key := clientIP(r)
+			if u, ok := userFrom(r.Context()); ok {
+				key = "u:" + u.MaxUserID
+			} else if acc := accessFrom(r.Context()); acc.MaxUserID != "" {
+				key = "s:" + acc.MaxUserID + ":" + clientIP(r)
+			}
+			if !a.writes.allow(key, time.Now()) {
+				writeError(w, http.StatusTooManyRequests, "too_many_requests", "Слишком много действий подряд. Подождите минуту.")
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// limitIP — ограничение по адресу для открытых точек (уведомления платёжных систем).
+func limitIP(l *limiter) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !l.allow(clientIP(r), time.Now()) {
+				writeError(w, http.StatusTooManyRequests, "too_many_requests", "Слишком много запросов")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }

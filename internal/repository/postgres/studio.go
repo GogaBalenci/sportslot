@@ -380,8 +380,8 @@ func (s *Store) ConnectVenue(ctx context.Context, venueID string) error {
 
 // UpdateVenueProfile — то, что студия может поправить сама.
 func (s *Store) UpdateVenueProfile(ctx context.Context, venueID, phone, website, description, whatToBring string, trialPrice *int) error {
-	_, err := s.pool.Exec(ctx, `UPDATE venues SET phone = $2, website = $3, description = $4, what_to_bring = $5, trial_price = $6
-		WHERE id = $1`, venueID, phone, website, description, whatToBring, trialPrice)
+	_, err := s.pool.Exec(ctx, `UPDATE venues SET phone = $2, website = $3, description = $4, what_to_bring = $5, trial_price = $6,
+		profile_edited = true WHERE id = $1`, venueID, phone, website, description, whatToBring, trialPrice)
 	return wrap("update venue profile", err)
 }
 

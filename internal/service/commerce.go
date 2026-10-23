@@ -306,6 +306,8 @@ func (c *CommerceService) MyPasses(ctx context.Context, maxUserID, name string) 
 type PassOrder struct {
 	UserPass *model.UserPass `json:"user_pass"`
 	Payment  *model.Payment  `json:"payment,omitempty"`
+	// Created=false — такая заявка уже была, новая не создана.
+	Created bool `json:"created"`
 }
 
 func (c *CommerceService) RequestPass(ctx context.Context, maxUserID, name, passID string) (*PassOrder, error) {
@@ -327,11 +329,27 @@ func (c *CommerceService) RequestPass(ctx context.Context, maxUserID, name, pass
 	if err != nil {
 		return nil, err
 	}
-	up, err := c.store.RequestUserPass(ctx, pass, user.ID)
+	if open, err := c.store.OpenPassRequest(ctx, user.ID, venue.ID); err != nil {
+		return nil, err
+	} else if open != nil && open.PassID != pass.ID {
+		return nil, limit("В этой студии уже есть твоя заявка на абонемент. Дождись подтверждения или отмени её в «Моих занятиях».")
+	} else if open == nil {
+		if n, err := c.store.CountOpenPassRequests(ctx, user.ID); err != nil {
+			return nil, err
+		} else if n >= maxOpenPassRequests {
+			return nil, limit("У тебя уже три неоплаченные заявки на абонементы. Оплати или отмени одну из них.")
+		}
+		if n, err := c.store.CountPassRequestsSince(ctx, user.ID, c.now().Add(-24*time.Hour)); err != nil {
+			return nil, err
+		} else if n >= maxPassRequestsPerDay {
+			return nil, limit("Слишком много заявок на абонементы за сутки. Попробуй завтра.")
+		}
+	}
+	up, created, err := c.store.RequestUserPass(ctx, pass, user.ID)
 	if err != nil {
 		return nil, err
 	}
-	order := &PassOrder{UserPass: up}
+	order := &PassOrder{UserPass: up, Created: created}
 	settings, err := c.store.GetSettings(ctx, venue.ID)
 	if err != nil {
 		return nil, err
@@ -342,7 +360,8 @@ func (c *CommerceService) RequestPass(ctx context.Context, maxUserID, name, pass
 			fmt.Sprintf("Абонемент «%s», %s", pass.Title, venue.Name))
 		return order, err
 	}
-	if c.studio.presenter != nil {
+	// Студии пишем только о новой заявке: повторные нажатия её не дублируют.
+	if created && c.studio.presenter != nil {
 		c.studio.notifyAdmins(venue.ID, func(ctx context.Context, admin string) error {
 			return c.studio.presenter.StudioPassRequest(ctx, admin, up)
 		})

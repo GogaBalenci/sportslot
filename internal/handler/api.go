@@ -30,6 +30,7 @@ type API struct {
 	geocoder *geocode.Geocoder
 	logins   *limiter
 	lookups  *limiter
+	writes   *limiter
 	now      func() time.Time
 }
 
@@ -62,6 +63,10 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "booking_closed", "Запись на это занятие закрыта студией")
 	case errors.Is(err, service.ErrInvalidRequest):
 		writeError(w, http.StatusBadRequest, "invalid_request", "Некорректный запрос")
+	case errors.As(err, new(*service.LimitError)):
+		var le *service.LimitError
+		errors.As(err, &le)
+		writeError(w, http.StatusTooManyRequests, "limit", le.Message)
 	case errors.Is(err, service.ErrOwnInvite):
 		writeError(w, http.StatusConflict, "own_invite", "Это ваша ссылка — отправьте её другу")
 	case errors.Is(err, service.ErrPaymentsOff):

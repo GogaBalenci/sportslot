@@ -56,6 +56,14 @@ func (s *BookingService) Book(ctx context.Context, maxUserID, userName, slotID s
 	if err != nil {
 		return nil, false, err
 	}
+	// Повторная запись на то же занятие вернёт существующую — лимиты для неё не нужны.
+	if has, err := s.store.HasActiveBooking(ctx, user.ID, slotID); err != nil {
+		return nil, false, err
+	} else if !has {
+		if err := s.checkBookingLimits(ctx, user.ID, time.Now()); err != nil {
+			return nil, false, err
+		}
+	}
 	b, created, err := s.store.CreateBooking(ctx, user.ID, slotID, channel)
 	if err != nil {
 		return nil, false, err

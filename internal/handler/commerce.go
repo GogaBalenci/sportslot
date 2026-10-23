@@ -138,7 +138,7 @@ func (a *API) BuyPass(w http.ResponseWriter, r *http.Request) {
 	}
 	// Платёжная система не ответила: заявка сохранена, оплатить можно позже.
 	writeJSON(w, http.StatusOK, map[string]interface{}{"user_pass": order.UserPass, "payment": order.Payment,
-		"payment_error": err != nil})
+		"created": order.Created, "payment_error": err != nil})
 }
 
 func (a *API) PayPass(w http.ResponseWriter, r *http.Request) {

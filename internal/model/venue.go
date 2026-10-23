@@ -45,6 +45,15 @@ type Venue struct {
 	TrialPrice *int       `json:"trial_price,omitempty"`
 	VerifiedAt *time.Time `json:"verified_at,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
+	// LogoURL — логотип студии; версия в адресе сбрасывает кэш при замене.
+	LogoURL string `json:"logo_url,omitempty"`
+}
+
+func (v *Venue) SetLogo(version string) {
+	v.LogoURL = ""
+	if version != "" {
+		v.LogoURL = "/api/v1/venues/" + v.ID + "/logo?v=" + version
+	}
 }
 
 func (v *Venue) IsDemo() bool { return v.Source == VenueSourceDemo }

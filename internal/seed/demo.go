@@ -44,9 +44,6 @@ var (
 
 func price(p int) *int { return &p }
 
-const demoNote = "Демо-партнёр: студия вымышлена, адрес условный, расписание модельное. " +
-	"На ней можно пройти весь путь — от записи до отметки посещения по QR."
-
 // DemoVenues — модельные студии-партнёры, по одной в каждом районе Ростова.
 var DemoVenues = []demoVenue{
 	{
@@ -54,7 +51,8 @@ var DemoVenues = []demoVenue{
 			Address: "пр. Космонавтов, 32", Lat: 47.2893, Lon: 39.7147,
 			Sports:      []string{"swimming", "fitness", "yoga", "boxing"},
 			WhatToBring: "Удобную форму, сменную обувь и воду. В бассейн — шапочку, очки и сланцы.",
-			TrialPrice:  price(0)},
+			TrialPrice:  price(0),
+			Description: "Спортцентр с бассейном, залом бокса и студией йоги — можно попробовать несколько направлений в одном месте."},
 		lessons: []lesson{
 			{"Бокс для новичков", "boxing", mwf, 19, 0, time.Hour, 10},
 			{"Плавание для взрослых", "swimming", tt, 8, 0, 45 * time.Minute, 6},
@@ -70,7 +68,8 @@ var DemoVenues = []demoVenue{
 	{
 		venue: model.Venue{ID: "a1111111-0000-0000-0000-000000000002", Name: "Студия йоги «Равновесие»",
 			District: "kirovsky", Address: "ул. Пушкинская, 140", Lat: 47.2268, Lon: 39.7242,
-			Sports: []string{"yoga"}, WhatToBring: "Удобную одежду. Коврики есть в студии.", TrialPrice: price(300)},
+			Sports: []string{"yoga"}, WhatToBring: "Удобную одежду. Коврики есть в студии.", TrialPrice: price(300),
+			Description: "Небольшая студия хатха-йоги: группы для начинающих утром и вечером, коврики и пледы есть."},
 		lessons: []lesson{
 			{"Хатха-йога для начинающих", "yoga", weekdays, 8, 0, time.Hour, 10},
 			{"Хатха-йога для начинающих", "yoga", weekdays, 19, 0, time.Hour, 10},
@@ -80,7 +79,8 @@ var DemoVenues = []demoVenue{
 	{
 		venue: model.Venue{ID: "a1111111-0000-0000-0000-000000000003", Name: "Клуб единоборств «Стойка»",
 			District: "sovetsky", Address: "ул. Малиновского, 16", Lat: 47.2337, Lon: 39.6181,
-			Sports: []string{"boxing"}, WhatToBring: "Спортивную форму и полотенце. Бинты и перчатки дадим.", TrialPrice: price(0)},
+			Sports: []string{"boxing"}, WhatToBring: "Спортивную форму и полотенце. Бинты и перчатки дадим.", TrialPrice: price(0),
+			Description: "Бокс и кикбоксинг для взрослых с нуля: техника и работа в парах без жёстких спаррингов."},
 		lessons: []lesson{
 			{"Бокс: техника с нуля", "boxing", mwf, 18, 0, time.Hour, 8},
 			{"Кикбоксинг для взрослых", "boxing", mwf, 20, 0, time.Hour, 8},
@@ -90,7 +90,8 @@ var DemoVenues = []demoVenue{
 	{
 		venue: model.Venue{ID: "a1111111-0000-0000-0000-000000000004", Name: "Школа танцев «Ритм»",
 			District: "proletarsky", Address: "ул. 20-я Линия, 5", Lat: 47.2346, Lon: 39.7612,
-			Sports: []string{"dance"}, WhatToBring: "Свободную одежду и сменную обувь.", TrialPrice: price(250)},
+			Sports: []string{"dance"}, WhatToBring: "Свободную одежду и сменную обувь.", TrialPrice: price(250),
+			Description: "Современные танцы и латина для взрослых без подготовки — группы собираются по уровню."},
 		lessons: []lesson{
 			{"Современные танцы с нуля", "dance", tt, 19, 0, time.Hour, 12},
 			{"Латина для начинающих", "dance", []time.Weekday{time.Monday, time.Wednesday}, 20, 0, time.Hour, 12},
@@ -100,7 +101,8 @@ var DemoVenues = []demoVenue{
 	{
 		venue: model.Venue{ID: "a1111111-0000-0000-0000-000000000005", Name: "Зал «Кузница»",
 			District: "oktyabrsky", Address: "пр. Ленина, 99", Lat: 47.2491, Lon: 39.6902,
-			Sports: []string{"fitness"}, WhatToBring: "Кроссовки, форму и воду.", TrialPrice: price(0)},
+			Sports: []string{"fitness"}, WhatToBring: "Кроссовки, форму и воду.", TrialPrice: price(0),
+			Description: "Функциональный тренинг в мини-группах до 10 человек — тренер следит за техникой каждого."},
 		lessons: []lesson{
 			{"Функциональный тренинг", "fitness", weekdays, 7, 0, 50 * time.Minute, 10},
 			{"Функциональный тренинг", "fitness", weekdays, 19, 0, 50 * time.Minute, 10},
@@ -110,7 +112,8 @@ var DemoVenues = []demoVenue{
 	{
 		venue: model.Venue{ID: "a1111111-0000-0000-0000-000000000006", Name: "Бассейн «Волна»",
 			District: "pervomaysky", Address: "пр. Шолохова, 78", Lat: 47.2689, Lon: 39.7681,
-			Sports: []string{"swimming"}, WhatToBring: "Шапочку, очки, сланцы и полотенце.", TrialPrice: price(400)},
+			Sports: []string{"swimming"}, WhatToBring: "Шапочку, очки, сланцы и полотенце.", TrialPrice: price(400),
+			Description: "25-метровый бассейн: плавание с инструктором для взрослых и аквааэробика по воскресеньям."},
 		lessons: []lesson{
 			{"Плавание с инструктором", "swimming", mwf, 7, 0, 45 * time.Minute, 6},
 			{"Плавание с инструктором", "swimming", mwf, 21, 0, 45 * time.Minute, 6},
@@ -120,7 +123,8 @@ var DemoVenues = []demoVenue{
 	{
 		venue: model.Venue{ID: "a1111111-0000-0000-0000-000000000007", Name: "Спортклуб «Команда»",
 			District: "zheleznodorozhny", Address: "ул. Профсоюзная, 33", Lat: 47.2176, Lon: 39.6591,
-			Sports: []string{"team"}, WhatToBring: "Форму и кроссовки для зала.", TrialPrice: price(0)},
+			Sports: []string{"team"}, WhatToBring: "Форму и кроссовки для зала.", TrialPrice: price(0),
+			Description: "Любительский мини-футбол и волейбол для взрослых — можно прийти одному, команду соберём."},
 		lessons: []lesson{
 			{"Мини-футбол для взрослых", "team", tt, 20, 0, 90 * time.Minute, 12},
 			{"Волейбол: игры для новичков", "team", []time.Weekday{time.Wednesday}, 19, 0, 90 * time.Minute, 12},
@@ -130,7 +134,8 @@ var DemoVenues = []demoVenue{
 	{
 		venue: model.Venue{ID: "a1111111-0000-0000-0000-000000000008", Name: "Студия «Гибкость»",
 			District: "leninsky", Address: "ул. Большая Садовая, 12", Lat: 47.2205, Lon: 39.6978,
-			Sports: []string{"yoga", "dance"}, WhatToBring: "Удобную одежду и носки.", TrialPrice: price(200)},
+			Sports: []string{"yoga", "dance"}, WhatToBring: "Удобную одежду и носки.", TrialPrice: price(200),
+			Description: "Растяжка, пилатес и пластика в небольших группах — мягкая нагрузка для тех, кто начинает с нуля."},
 		lessons: []lesson{
 			{"Растяжка и пилатес", "yoga", mwf, 20, 0, time.Hour, 10},
 			{"Растяжка и пилатес", "yoga", []time.Weekday{time.Saturday}, 10, 0, time.Hour, 10},
@@ -150,7 +155,6 @@ func SyncDemo(ctx context.Context, store *postgres.Store, now time.Time) (int, e
 		v.BookingMode = model.BookingModeInstant
 		v.SportType = v.Sports[0]
 		v.Level = "beginner"
-		v.Description = demoNote
 		if err := store.UpsertVenue(ctx, &v); err != nil {
 			return 0, fmt.Errorf("demo venue %s: %w", v.Name, err)
 		}

@@ -23,6 +23,35 @@ type BotWebhook struct {
 	// поступления: при быстрых нажатиях кнопок сценарий не путается.
 	mu     sync.Mutex
 	queues map[string]chan bot.Incoming
+
+	// Защита от флуда: не больше 5 событий за 3 секунды от одного человека,
+	// одинаковые нажатия и команды подряд (за 2 секунды) считаются одним.
+	rate    *limiter
+	repeats *limiter
+	warns   *limiter
+	answers *limiter
+}
+
+func (h *BotWebhook) allow(in bot.Incoming) (ok, warn bool) {
+	if h.rate == nil {
+		return true, false
+	}
+	now := time.Now()
+	same := in.MaxUserID + "|" + in.Payload + "|" + in.Text
+	if in.Started {
+		same = in.MaxUserID + "|start"
+	}
+	if in.HasLocation {
+		same = ""
+	}
+	if same != "" && !h.repeats.allow(same, now) {
+		// Двойное нажатие: молча отбрасываем, но кнопку закрываем.
+		return false, false
+	}
+	if !h.rate.allow(in.MaxUserID, now) {
+		return false, h.warns.allow(in.MaxUserID, now)
+	}
+	return true, false
 }
 
 const userQueueSize = 32
@@ -32,6 +61,20 @@ func (h *BotWebhook) dispatch(in bot.Incoming) {
 	defer h.mu.Unlock()
 	if h.queues == nil {
 		h.queues = map[string]chan bot.Incoming{}
+	}
+	if ok, warn := h.allow(in); !ok {
+		if in.CallbackID != "" && !h.answers.allow(in.MaxUserID, time.Now()) {
+			return
+		}
+		if in.CallbackID == "" && !warn {
+			return
+		}
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			h.bot.Throttled(ctx, in, warn)
+		}()
+		return
 	}
 	q, running := h.queues[in.MaxUserID]
 	if !running {

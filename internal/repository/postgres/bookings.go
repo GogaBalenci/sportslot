@@ -52,11 +52,12 @@ const viewSelect = `SELECT ` + bookingColumns + `, u.max_user_id, COALESCE(u.nam
 
 const venueColumnsV = `v.id, COALESCE(v.external_id, ''), v.name, v.sport_type, v.sports, v.level, v.address, v.district,
 	v.lat, v.lon, v.source, v.source_url, v.booking_mode, v.phone, v.website, v.opening_hours,
-	v.description, v.what_to_bring, v.trial_price, v.verified_at, v.created_at`
+	v.description, v.what_to_bring, v.trial_price, v.verified_at, v.created_at, v.logo_version`
 
 func scanView(row pgx.Row) (*model.BookingView, error) {
 	var bv model.BookingView
 	var rating *int16
+	var logo string
 	v := &bv.Venue
 	sl := &bv.Slot
 	dest := append(bookingDest(&bv.Booking, &rating), &bv.MaxUserID, &bv.UserName,
@@ -64,10 +65,11 @@ func scanView(row pgx.Row) (*model.BookingView, error) {
 		&sl.TemplateID, &sl.Closed, &sl.Cancelled,
 		&v.ID, &v.ExternalID, &v.Name, &v.SportType, &v.Sports, &v.Level, &v.Address, &v.District,
 		&v.Lat, &v.Lon, &v.Source, &v.SourceURL, &v.BookingMode, &v.Phone, &v.Website, &v.OpeningHours,
-		&v.Description, &v.WhatToBring, &v.TrialPrice, &v.VerifiedAt, &v.CreatedAt)
+		&v.Description, &v.WhatToBring, &v.TrialPrice, &v.VerifiedAt, &v.CreatedAt, &logo)
 	if err := row.Scan(dest...); err != nil {
 		return nil, err
 	}
+	v.SetLogo(logo)
 	finishBooking(&bv.Booking, rating)
 	return &bv, nil
 }

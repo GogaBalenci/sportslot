@@ -700,6 +700,10 @@ func (b *Bot) book(ctx context.Context, in Incoming, st state, slotID string) {
 	case errors.Is(err, service.ErrSlotStarted):
 		b.reply(ctx, in, "Это занятие уже началось. Выбери другое время.", mc.Keyboard{{mc.Callback("К результатам", "res")}})
 	default:
+		if text, ok := limitText(err); ok {
+			b.reply(ctx, in, text, mc.Keyboard{{mc.Callback("Мои записи", "my")}})
+			return
+		}
 		log.Printf("bot: book %s: %v", slotID, err)
 		b.reply(ctx, in, "Не получилось записаться. Попробуй ещё раз или выбери другое занятие.", mc.Keyboard{{mc.Callback("В начало", "menu")}})
 	}
@@ -962,6 +966,10 @@ func (b *Bot) sendMessage(ctx context.Context, in Incoming, st state) {
 		return
 	}
 	if _, err := b.studio.SendClientMessage(ctx, in.MaxUserID, in.Name, venueID, in.Text); err != nil {
+		if text, ok := limitText(err); ok {
+			b.reply(ctx, in, text, mc.Keyboard{{mc.Callback("Мои записи", "my")}})
+			return
+		}
 		log.Printf("bot: client message: %v", err)
 		b.reply(ctx, in, "Не получилось отправить сообщение. Попробуй ещё раз.", mc.Keyboard{{mc.Callback("Написать ещё раз", "msg:"+venueID)}})
 		return
@@ -991,6 +999,10 @@ func (b *Bot) addFriend(ctx context.Context, in Incoming, bookingID string) {
 		b.reply(ctx, in, "😕 На это занятие свободных мест больше нет — для друга не хватило.", mc.Keyboard{{mc.Callback("Мои записи", "my")}})
 		return
 	default:
+		if text, ok := limitText(err); ok {
+			b.reply(ctx, in, text, mc.Keyboard{{mc.Callback("Мои записи", "my")}})
+			return
+		}
 		b.reply(ctx, in, "Не получилось забронировать место для друга: запись уже неактивна.", mc.Keyboard{{mc.Callback("Мои записи", "my")}})
 		return
 	}
@@ -1019,5 +1031,28 @@ func (b *Bot) payTrial(ctx context.Context, in Incoming, bookingID string) {
 	default:
 		log.Printf("bot: pay trial %s: %v", bookingID, err)
 		b.reply(ctx, in, "Платёжная система не ответила. Попробуй позже или оплати на месте.", nil)
+	}
+}
+
+// limitText — понятное сообщение, если действие отклонено лимитом.
+func limitText(err error) (string, bool) {
+	var le *service.LimitError
+	if errors.As(err, &le) {
+		return "⏳ " + le.Message, true
+	}
+	return "", false
+}
+
+// Throttled — пользователь шлёт события слишком часто: лишние отбрасываются.
+// Нажатие кнопки обязательно закрываем ответом, иначе она «крутится».
+func (b *Bot) Throttled(ctx context.Context, in Incoming, warn bool) {
+	if in.CallbackID != "" {
+		if err := b.client.AnswerCallback(ctx, in.CallbackID, "Не так быстро — подожди пару секунд"); err != nil {
+			log.Printf("bot: answer throttled callback: %v", err)
+		}
+		return
+	}
+	if warn {
+		b.reply(ctx, in, "⏳ Слишком много сообщений подряд. Подожди пару секунд — и продолжим.", nil)
 	}
 }

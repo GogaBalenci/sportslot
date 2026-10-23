@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"image"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -57,6 +59,21 @@ func newFakeMax(t *testing.T) *fakeMax {
 	return f
 }
 
+// count — сколько ещё сообщений с substr лежит в очереди (не ждёт новых).
+func (f *fakeMax) count(substr string) int {
+	n := 0
+	for {
+		select {
+		case msg := <-f.messages:
+			if strings.Contains(msg, substr) {
+				n++
+			}
+		default:
+			return n + 1 // плюс уже полученное через next
+		}
+	}
+}
+
 // next ждёт сообщение, в тексте которого есть substr, пропуская остальные.
 func (f *fakeMax) next(t *testing.T, substr string) string {
 	t.Helper()
@@ -74,6 +91,11 @@ func (f *fakeMax) next(t *testing.T, substr string) string {
 }
 
 func newServer(t *testing.T) (*httptest.Server, *fakeMax) {
+	return newServerWith(t, &handler.BotFlood{Events: 1000, Window: time.Second, Repeat: time.Millisecond})
+}
+
+// newServerWith — тестовый сервер с заданными лимитами бота (nil — как в проде).
+func newServerWith(t *testing.T, flood *handler.BotFlood) (*httptest.Server, *fakeMax) {
 	store := testdb.New(t)
 	if _, err := seed.LoadCatalog(context.Background(), store, "../../seed-data/rostov_catalog.json"); err != nil {
 		t.Fatal(err)
@@ -107,6 +129,7 @@ func newServer(t *testing.T) (*httptest.Server, *fakeMax) {
 		Bot:         chatBot,
 		Auth:        handler.UserAuth{BotToken: botToken, MaxAge: time.Hour, TestUsers: map[string]bool{seed.TestMaxUserID: true}},
 		CORSOrigins: []string{"*"}, WebhookSecret: "hook-secret",
+		BotFlood: flood,
 	})
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)
@@ -620,5 +643,71 @@ func TestBotReviewAndFriendButtons(t *testing.T) {
 	_, view := call(t, http.MethodGet, srv.URL+"/api/v1/bookings/"+id, user, nil)
 	if view["review"] != "Хороший тренер, приду ещё" {
 		t.Fatalf("review was not saved: %v", view["review"])
+	}
+}
+
+// TestBotFloodProtection — десять /start за секунду дают одно приветствие.
+func TestBotFloodProtection(t *testing.T) {
+	srv, max := newServerWith(t, nil)
+	for i := 0; i < 10; i++ {
+		webhook(t, srv, `{"update_type":"message_created","message":{"sender":{"user_id":4242,"first_name":"Флуд"},"body":{"text":"/start"}}}`)
+	}
+	max.next(t, "Привет, Флуд")
+	time.Sleep(300 * time.Millisecond)
+	if n := max.count("Привет, Флуд"); n != 1 {
+		t.Fatalf("greetings sent: %d", n)
+	}
+}
+
+// TestStudioLogo — загрузка, выдача с долгим кэшем и запрет для демо-доступа.
+func TestStudioLogo(t *testing.T) {
+	srv, _ := newServer(t)
+	venue := "a1111111-0000-0000-0000-000000000002"
+	img := image.NewNRGBA(image.Rect(0, 0, 400, 300))
+	for i := range img.Pix {
+		img.Pix[i] = 200
+		if i%4 == 3 {
+			img.Pix[i] = 255 // непрозрачный логотип сохраняется как JPEG
+		}
+	}
+	var buf bytes.Buffer
+	_ = png.Encode(&buf, img)
+
+	put := func(headers map[string]string, body []byte) int {
+		req, _ := http.NewRequest(http.MethodPut, srv.URL+"/api/v1/studio/"+venue+"/logo", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "image/png")
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	_, login := call(t, http.MethodPost, srv.URL+"/api/v1/partner/login", nil, map[string]string{"code": "partner-code"})
+	if status := put(map[string]string{"Authorization": "Partner " + login["token"].(string)}, buf.Bytes()); status != http.StatusForbidden {
+		t.Fatalf("demo access must not change the logo: %d", status)
+	}
+	if status := put(tma(999), []byte("<svg/>")); status != http.StatusBadRequest {
+		t.Fatalf("not an image: %d", status)
+	}
+	if status := put(tma(999), buf.Bytes()); status != http.StatusOK {
+		t.Fatalf("upload: %d", status)
+	}
+	_, details := call(t, http.MethodGet, srv.URL+"/api/v1/venues/"+venue, nil, nil)
+	logoURL, _ := details["logo_url"].(string)
+	if !strings.HasPrefix(logoURL, "/api/v1/venues/"+venue+"/logo?v=") {
+		t.Fatalf("logo url: %q", logoURL)
+	}
+	resp, err := http.Get(srv.URL + logoURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "image/jpeg" ||
+		!strings.Contains(resp.Header.Get("Cache-Control"), "immutable") || resp.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("logo response: %d %v", resp.StatusCode, resp.Header)
 	}
 }

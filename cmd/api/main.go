@@ -141,6 +141,7 @@ func main() {
 
 	notifier := service.NewNotifier(store, presenter, cfg.NotifierInterval, cfg.DemoData)
 	notifier.AddJob(commerce.Tick)
+	notifier.AddJob(bookings.ReleaseUnclaimedFriends)
 	notifier.AddJob(studio.StudioTick)
 	var wg sync.WaitGroup
 	wg.Add(1)
